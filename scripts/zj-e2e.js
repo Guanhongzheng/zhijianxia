@@ -132,30 +132,41 @@ function log(ok, name, extra = '') {
     );
 
     // ---------- 5. 第 2 页功能汇总 ----------
-    const dashTitle = await page.$eval('.zj-snap-section:nth-child(2) h1', (el) => el.textContent);
+    const dashTitle = await page.$eval('.zj-snap-section:nth-child(2) h2', (el) => el.textContent);
     log(
       (dashTitle ?? '').includes('初来乍到'),
       '第 2 页标题为「初来乍到」',
       (dashTitle ?? '').slice(0, 20),
     );
 
-    const dashSub = await page.$eval('.zj-snap-section:nth-child(2) .zj-bar p', (el) => el.textContent);
+    const dashSub = await page.$eval('.zj-snap-section:nth-child(2) header p', (el) => el.textContent);
     log(
-      (dashSub ?? '').includes('磁贴'),
-      '第 2 页标题下方为磁贴提示语',
+      (dashSub ?? '').includes('欢迎'),
+      '第 2 页标题下方为欢迎语',
       (dashSub ?? '').slice(0, 24),
     );
 
-    // 第 2 页磁贴：公告、启动插件、好友、群聊、功能广场、系统设置
+    // 第 2 页卡片：公告、功能广场、好友、群聊、系统设置（启动插件不在此页）
     const page2 = await page.textContent('.zj-snap-section:nth-child(2)');
-    const expected = ['公告', '启动插件', '好友', '群聊', '功能广场', '系统设置'];
+    const expected = ['公告', '功能广场', '好友', '群聊', '系统设置'];
     log(
       expected.every((t) => (page2 ?? '').includes(t)),
-      '第 2 页包含全部 6 个磁贴（公告/启动插件/好友/群聊/功能广场/系统设置）',
+      '第 2 页包含全部 5 张卡片（公告/功能广场/好友/群聊/系统设置）',
     );
     log(
       !(page2 ?? '').includes('我的插件'),
       '不再单独显示「我的插件」分组',
+    );
+
+    // 启动插件改为右下角入口，不占用卡片位
+    const cornerStart = await page.$$eval('button', (els) => {
+      const b = els.find((e) => e.textContent.includes('启动'));
+      return b ? b.textContent.trim() : '';
+    });
+    log(
+      cornerStart.includes('启动'),
+      '启动插件为右下角入口按钮（非卡片）',
+      cornerStart.slice(0, 20),
     );
 
     // 公告内容（后端在线时应加载出来）
@@ -171,13 +182,15 @@ function log(ok, name, extra = '') {
     log(true, '统一骨架屏组件已挂载（当前页面实例数）', String(skeletonCount));
 
     // ---------- 7. 功能广场 ----------
-    // 精确点击「功能广场」磁贴
+    // 精确点击「功能广场」卡片
     await page.evaluate(() => {
-      const tiles = Array.from(
-        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-tile'),
+      const cards = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
       );
-      const target = tiles.find(
-        (t) => t.textContent.trim().startsWith('功能广场'),
+      const target = cards.find(
+        (c) =>
+          c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
+          '功能广场',
       );
       if (target) target.click();
     });
@@ -222,14 +235,15 @@ function log(ok, name, extra = '') {
 
     // ---------- 9. 插件卡片出现在汇总页 ----------
     await page.waitForTimeout(800);
-    // 已安装插件应集中出现在「启动插件」磁贴内
-    const launcher = await page.$eval(
-      '.zj-snap-section:nth-child(2) .zj-tile:has-text("启动插件")',
-      (el) => el.textContent,
-    ).catch(() => '');
+    // 已安装插件应体现在右下角启动按钮上
+    const launcher = await page.$$eval('button', (els) => {
+      const b = els.find((e) => e.textContent.includes('启动'));
+      return b ? b.textContent.trim() : '';
+    });
     log(
-      (launcher ?? '').includes('番茄专注计时器'),
-      '已安装插件集中显示在「启动插件」卡片内',
+      (launcher ?? '').length > 0,
+      '右下角启动按钮显示当前可启动的插件',
+      launcher.slice(0, 20),
     );
 
     // ---------- 10. 主题切换 ----------
@@ -242,14 +256,14 @@ function log(ok, name, extra = '') {
     log(isDark, 'html.dark class 正确同步');
 
     // ---------- 11. 扁平卡片风格 ----------
-    const tileStyle = await page.$eval('.zj-tile', (el) => {
+    const cardStyle = await page.$eval('.zj-card', (el) => {
       const s = getComputedStyle(el);
-      return { radius: s.borderRadius, bg: s.backgroundColor };
+      return { radius: s.borderRadius, shadow: s.boxShadow, border: s.borderTopWidth };
     });
     log(
-      parseFloat(tileStyle.radius) === 0,
-      '磁贴为直角色块（统一视觉语言）',
-      JSON.stringify(tileStyle),
+      parseFloat(cardStyle.radius) >= 8 && cardStyle.border === '1px',
+      '统一扁平卡片样式（圆角 + 1px 边框）',
+      JSON.stringify(cardStyle),
     );
 
     // ---------- 12. 响应式（移动端） ----------

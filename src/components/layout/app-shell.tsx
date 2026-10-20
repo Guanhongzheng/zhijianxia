@@ -6,7 +6,7 @@ import { DashboardPage } from '@/components/pages/dashboard-page';
 import { LoginDialog } from '@/components/modals/login-dialog';
 import { CardDialog } from '@/components/modals/card-dialog';
 import { BackendGate } from '@/components/modals/backend-gate';
-import { StatusBar } from '@/components/layout/status-bar';
+import { CornerActions } from '@/components/layout/corner-actions';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useThemeStore } from '@/store/theme-store';
@@ -65,15 +65,15 @@ export function AppShell() {
     <>
       <div ref={containerRef} className="zj-scroll-snap">
         <section className="zj-snap-section" aria-label="欢迎页">
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 flex-1 flex-col">
             <WelcomePage onEnter={() => scrollToPage(1)} />
-            <StatusBar onGo={() => scrollToPage(1)} />
+            <CornerActions page={1} />
           </div>
         </section>
         <section className="zj-snap-section" aria-label="功能汇总页">
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 flex-1 flex-col">
             <DashboardPage active={activePage === 1} />
-            <StatusBar onGo={() => openCard('marketplace')} />
+            <CornerActions page={2} />
           </div>
         </section>
       </div>
