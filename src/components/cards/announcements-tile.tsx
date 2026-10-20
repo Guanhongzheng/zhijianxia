@@ -1,11 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Megaphone, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { SkeletonNotice } from '@/components/ui/skeleton';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import {
@@ -23,20 +21,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/input';
+import { Input, Textarea } from '@/components/ui/input';
 
-/** 公告卡片组：普通用户只读，管理员可编辑 */
-export function AnnouncementsCard() {
+/**
+ * 公告磁贴 —— 红色资讯块，滚动展示公告列表。
+ * 管理员可直接在磁贴内新增/编辑/删除。
+ */
+export function AnnouncementsTile({ isAdmin }: { isAdmin: boolean }) {
   const notices = useAppStore((s) => s.notices);
   const loading = useAppStore((s) => s.noticesLoading);
   const loaded = useAppStore((s) => s.noticesLoaded);
   const backendOnline = useAppStore((s) => s.backendOnline);
-  const isAdmin = useAuthStore((s) => s.isAdmin);
   const token = useAuthStore((s) => s.token);
   const lan = useAppStore((s) => s.lan);
   const notify = useAppStore((s) => s.notify);
   const refreshNotices = useAppStore((s) => s.refreshNotices);
+  const openCard = useAppStore((s) => s.openCard);
 
   const [editing, setEditing] = useState<Notice | null>(null);
   const [creating, setCreating] = useState(false);
@@ -49,99 +49,101 @@ export function AnnouncementsCard() {
     }
   }, [backendOnline, loaded, refreshNotices]);
 
-  // 后端离线：不显示骨架屏，直接给出友好提示
-  if (!backendOnline) {
-    return (
-      <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
-        <Megaphone className="size-5 text-[var(--zj-muted-fg)]" />
-        <p className="text-sm">公告需要后端服务支持</p>
-        <p className="text-xs text-[var(--zj-muted-fg)]">
-          启动后端服务后即可查看更新日志与新增功能公告
-        </p>
-      </div>
-    );
-  }
-
-  // 加载中：统一骨架屏
-  if (loading || !loaded) {
-    return (
-      <div className="space-y-2.5 p-3">
-        <SkeletonNotice />
-        <SkeletonNotice />
-      </div>
-    );
-  }
-
   return (
-    <>
-      <div className="space-y-2.5 p-3">
-        {notices.length === 0 ? (
-          <div className="px-5 py-8 text-center">
-            <p className="text-sm text-[var(--zj-muted-fg)]">
-              暂无公告
-              {isAdmin ? '，点击右上角「新增公告」发布第一条' : ''}
-            </p>
-          </div>
-        ) : (
-          notices.map((notice) => (
-            <motion.article
-              key={notice.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col gap-1.5 rounded-md border border-[var(--zj-border)] bg-[var(--zj-bg)] p-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <h4 className="text-sm leading-snug font-medium">{notice.title}</h4>
-                {isAdmin && (
-                  <div className="flex shrink-0 gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => setEditing(notice)}
-                      aria-label="编辑公告"
-                    >
-                      <Pencil className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => setRemoving(notice)}
-                      aria-label="删除公告"
-                      className="text-red-500 hover:bg-red-500/10"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-              <p className="text-xs leading-relaxed whitespace-pre-wrap text-[var(--zj-muted-fg)]">
-                {notice.body}
-              </p>
-              <div className="mt-auto flex items-center gap-2 pt-1">
-                <Badge variant="outline" className="text-[10px]">
-                  {notice.authorUid}
-                </Badge>
-                <span className="text-[11px] text-[var(--zj-muted-fg)]">
-                  {formatTime(notice.createdAt)}
-                </span>
-              </div>
-            </motion.article>
-          ))
+    <div className="zj-tile zj-tile-news flex min-h-56 h-full flex-col overflow-hidden text-white">
+      {/* 磁贴标题 */}
+      <div className="flex shrink-0 items-center gap-2 px-3 pt-2.5 pb-1.5">
+        <Megaphone className="size-4 shrink-0" strokeWidth={1.9} />
+        <span className="text-sm font-medium">公告</span>
+        <span className="text-[11px] opacity-80">
+          {notices.length > 0 ? `${notices.length} 条` : ''}
+        </span>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] transition-opacity hover:opacity-75"
+          >
+            <Plus className="size-3" />
+            新增
+          </button>
         )}
       </div>
 
-      {/* 管理员操作入口 */}
-      {isAdmin && (
-        <div className="mt-3 flex justify-end">
-          <Button size="sm" variant="outline" onClick={() => setCreating(true)}>
-            <Plus className="size-3.5" />
-            新增公告
-          </Button>
-        </div>
-      )}
+      {/* 公告列表 */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2.5">
+        {!backendOnline ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1.5 py-8 text-center">
+            <p className="text-sm font-medium">公告需要后端服务支持</p>
+            <p className="text-[11px] opacity-85">
+              启动后端服务后即可查看更新日志
+            </p>
+          </div>
+        ) : loading || !loaded ? (
+          <div className="space-y-1.5 py-1">
+            <div className="h-12 animate-pulse rounded bg-white/20" />
+            <div className="h-12 animate-pulse rounded bg-white/15" />
+            <div className="h-12 animate-pulse rounded bg-white/10" />
+          </div>
+        ) : notices.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-1.5 py-8 text-center">
+            <p className="text-sm opacity-90">暂无公告</p>
+            {isAdmin && (
+              <p className="text-[11px] opacity-75">点击右上角「新增」发布</p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {notices.map((notice, idx) => (
+              <motion.div
+                key={notice.id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.2,
+                  delay: Math.min(idx * 0.04, 0.2),
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                className="group relative rounded bg-white/12 p-2.5 transition-colors hover:bg-white/20"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs leading-snug font-medium">
+                    {notice.title}
+                  </p>
+                  {isAdmin && (
+                    <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => setEditing(notice)}
+                        aria-label="编辑公告"
+                        className="rounded p-0.5 transition-opacity hover:opacity-70"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRemoving(notice)}
+                        aria-label="删除公告"
+                        className="rounded p-0.5 transition-opacity hover:opacity-70"
+                      >
+                        <Trash2 className="size-3" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed opacity-90">
+                  {notice.body}
+                </p>
+                <p className="mt-1 text-[10px] opacity-70">
+                  {notice.authorUid} · {formatTime(notice.createdAt)}
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* 编辑 / 新增弹窗 */}
+      {/* 新增 / 编辑弹窗 */}
       <NoticeEditor
         open={creating || editing !== null}
         notice={editing}
@@ -176,7 +178,7 @@ export function AnnouncementsCard() {
       {/* 删除确认 */}
       <Dialog
         open={removing !== null}
-        onOpenChange={(open) => !open && setRemoving(null)}
+        onOpenChange={(o) => !o && setRemoving(null)}
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -198,7 +200,10 @@ export function AnnouncementsCard() {
                   notify('公告已删除', 'success');
                   await refreshNotices();
                 } catch (err) {
-                  notify(err instanceof Error ? err.message : '删除失败', 'error');
+                  notify(
+                    err instanceof Error ? err.message : '删除失败',
+                    'error',
+                  );
                 }
                 setRemoving(null);
               }}
@@ -208,7 +213,7 @@ export function AnnouncementsCard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
 
@@ -241,7 +246,7 @@ function NoticeEditor({
         <DialogHeader>
           <DialogTitle>{notice ? '修改公告' : '新增公告'}</DialogTitle>
           <DialogDescription>
-            公告内容将展示在功能汇总页的公告卡片组中
+            公告内容将展示在功能磁贴页的公告磁贴中
           </DialogDescription>
         </DialogHeader>
 
@@ -287,9 +292,8 @@ function NoticeEditor({
             disabled={!title.trim() || !body.trim() || saving}
             onClick={async () => {
               setSaving(true);
-              const ok = await onSubmit(title.trim(), body.trim());
+              await onSubmit(title.trim(), body.trim());
               setSaving(false);
-              if (!ok) return;
             }}
           >
             {saving ? '保存中…' : '保存'}

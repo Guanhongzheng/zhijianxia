@@ -99,8 +99,8 @@ function log(ok, name, extra = '') {
       JSON.stringify(after.cached).slice(0, 70),
     );
     log(
-      after.bodyText.includes('UID '),
-      '欢迎页正常渲染用户信息',
+      after.bodyText.includes('进入功能区'),
+      '欢迎页正常渲染已登录状态',
     );
   } catch (err) {
     log(false, '测试执行中断', err.message.split('\n')[0]);

@@ -35,10 +35,10 @@ function log(ok, name, extra = '') {
     await page.goto(BASE, { waitUntil: 'networkidle', timeout: 60000 });
     await page.waitForTimeout(1500);
 
-    const h1 = await page.textContent('h1');
+    const h1 = await page.textContent('.zj-snap-section:nth-child(1) h1');
     log(h1?.includes('智简匣') ?? false, '欢迎页标题渲染', h1 ?? '');
 
-    const hero = await page.textContent('h2');
+    const hero = await page.textContent('.zj-snap-section:nth-child(1)');
     log(
       (hero ?? '').includes('把 AI 装进你自己的设备'),
       '欢迎页主文案渲染',
@@ -113,8 +113,9 @@ function log(ok, name, extra = '') {
       JSON.stringify(afterReload.cached).slice(0, 80),
     );
     log(
-      afterReload.bodyText.includes('UID ') && afterReload.bodyText.includes(nickname),
-      '刷新后欢迎页正确渲染已登录用户卡片（不再崩溃）',
+      afterReload.bodyText.includes('进入功能区') &&
+        !afterReload.bodyText.includes('登录以使用完整功能'),
+      '刷新后欢迎页正确渲染已登录状态（不再崩溃）',
       nickname,
     );
 
@@ -131,33 +132,29 @@ function log(ok, name, extra = '') {
     );
 
     // ---------- 5. 第 2 页功能汇总 ----------
-    const dashTitle = await page.$eval('.zj-snap-section:nth-child(2) h2', (el) => el.textContent);
+    const dashTitle = await page.$eval('.zj-snap-section:nth-child(2) h1', (el) => el.textContent);
     log(
       (dashTitle ?? '').includes('初来乍到'),
       '第 2 页标题为「初来乍到」',
       (dashTitle ?? '').slice(0, 20),
     );
 
-    const dashSub = await page.$eval('.zj-snap-section:nth-child(2) header p', (el) => el.textContent);
+    const dashSub = await page.$eval('.zj-snap-section:nth-child(2) .zj-bar p', (el) => el.textContent);
     log(
-      (dashSub ?? '').includes('欢迎'),
-      '第 2 页标题下方为欢迎语',
+      (dashSub ?? '').includes('磁贴'),
+      '第 2 页标题下方为磁贴提示语',
       (dashSub ?? '').slice(0, 24),
     );
 
-    // 第 2 页应为 6 张卡片：公告、启动插件、好友、群聊、功能广场、系统设置
-    const cardTitles = await page.$$eval(
-      '.zj-snap-section:nth-child(2) .zj-card p.text-sm.font-medium',
-      (els) => els.map((e) => e.textContent.trim()),
-    );
+    // 第 2 页磁贴：公告、启动插件、好友、群聊、功能广场、系统设置
+    const page2 = await page.textContent('.zj-snap-section:nth-child(2)');
     const expected = ['公告', '启动插件', '好友', '群聊', '功能广场', '系统设置'];
     log(
-      expected.every((t) => cardTitles.includes(t)),
-      '第 2 页包含全部 6 张卡片（公告/启动插件/好友/群聊/功能广场/系统设置）',
-      cardTitles.join('、'),
+      expected.every((t) => (page2 ?? '').includes(t)),
+      '第 2 页包含全部 6 个磁贴（公告/启动插件/好友/群聊/功能广场/系统设置）',
     );
     log(
-      !cardTitles.includes('我的插件'),
+      !(page2 ?? '').includes('我的插件'),
       '不再单独显示「我的插件」分组',
     );
 
@@ -174,15 +171,13 @@ function log(ok, name, extra = '') {
     log(true, '统一骨架屏组件已挂载（当前页面实例数）', String(skeletonCount));
 
     // ---------- 7. 功能广场 ----------
-    // 精确点击「功能广场」卡片（标题精确匹配，避免匹配到父容器）
+    // 精确点击「功能广场」磁贴
     await page.evaluate(() => {
-      const cards = Array.from(
-        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      const tiles = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-tile'),
       );
-      const target = cards.find(
-        (c) =>
-          c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
-          '功能广场',
+      const target = tiles.find(
+        (t) => t.textContent.trim().startsWith('功能广场'),
       );
       if (target) target.click();
     });
@@ -227,9 +222,9 @@ function log(ok, name, extra = '') {
 
     // ---------- 9. 插件卡片出现在汇总页 ----------
     await page.waitForTimeout(800);
-    // 已安装插件应集中出现在「启动插件」卡片内
+    // 已安装插件应集中出现在「启动插件」磁贴内
     const launcher = await page.$eval(
-      '.zj-snap-section:nth-child(2) .zj-card:has-text("启动插件")',
+      '.zj-snap-section:nth-child(2) .zj-tile:has-text("启动插件")',
       (el) => el.textContent,
     ).catch(() => '');
     log(
@@ -247,14 +242,14 @@ function log(ok, name, extra = '') {
     log(isDark, 'html.dark class 正确同步');
 
     // ---------- 11. 扁平卡片风格 ----------
-    const cardStyle = await page.$eval('.zj-card', (el) => {
+    const tileStyle = await page.$eval('.zj-tile', (el) => {
       const s = getComputedStyle(el);
-      return { radius: s.borderRadius, shadow: s.boxShadow, border: s.borderTopWidth };
+      return { radius: s.borderRadius, bg: s.backgroundColor };
     });
     log(
-      parseFloat(cardStyle.radius) >= 8 && cardStyle.border === '1px',
-      '统一扁平卡片样式（圆角 + 1px 边框）',
-      JSON.stringify(cardStyle),
+      parseFloat(tileStyle.radius) === 0,
+      '磁贴为直角色块（统一视觉语言）',
+      JSON.stringify(tileStyle),
     );
 
     // ---------- 12. 响应式（移动端） ----------

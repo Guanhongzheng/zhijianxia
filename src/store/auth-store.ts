@@ -77,20 +77,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isAdmin: validUser.role === 'admin',
       });
     } else if (user) {
-      // 缓存结构损坏，清理后要求重新登录
+      // 缓存结构损坏，清理后等待服务端校验结果
       writeLocal(USER_KEY, null);
     }
 
     if (token) {
-      // 静默校验令牌有效性，并用服务端最新资料覆盖本地缓存
+      // 静默校验令牌有效性，并用服务端最新资料覆盖本地缓存。
+      // 即使本地缓存损坏，只要令牌有效也应恢复登录态。
       const lan = useAppStore.getState().lan;
       try {
         const fresh = await fetchMe(lan, token);
         if (fresh?.uid) {
           writeLocal(USER_KEY, fresh);
-          set({ user: fresh, isAdmin: fresh.role === 'admin' });
+          set({
+            token,
+            user: fresh,
+            logged: true,
+            isAdmin: fresh.role === 'admin',
+          });
         }
       } catch {
+        // 令牌失效：清除残留令牌，保持未登录状态
+        if (!validUser) {
+          writeLocal(TOKEN_KEY, null);
+          set({ token: null, user: null, logged: false, isAdmin: false });
+        }
         /* 令牌失效时保持本地状态，用户可自行重新登录 */
       }
     }

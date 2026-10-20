@@ -98,6 +98,26 @@
   --zj-wallpaper: none;
   --zj-wallpaper-size: cover;
   --zj-wallpaper-position: center;
+
+  /* ---- 启动器风格（磁贴 / 顶栏 / 状态栏）---- */
+  /* 页面底色（纹理之下） */
+  --zj-stage: #eef4fc;
+  /* 纹理线条色 */
+  --zj-pattern-line: #a9cdf2;
+  /* 顶栏 / 状态栏底色 */
+  --zj-bar: #2f7bd8;
+  /* 磁贴底色 */
+  --zj-tile: #4a90e2;
+  /* 磁贴悬浮态 */
+  --zj-tile-hover: #5a9de8;
+  /* 资讯（红色）磁贴 */
+  --zj-news: #e0464f;
+  --zj-news-hover: #ec5760;
+  /* 主行动（绿色） */
+  --zj-go: #27c14a;
+  --zj-go-hover: #2fd457;
+  /* 磁贴圆角（启动器风格为直角） */
+  --zj-tile-radius: 0px;
 }
 
 .dark {
@@ -113,6 +133,17 @@
   --zj-danger: #ff6369;
   --zj-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 18px rgb(0 0 0 / 0.22);
   --zj-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.28);
+
+  /* ---- 启动器风格（暗色）---- */
+  --zj-stage: #0d1117;
+  --zj-pattern-line: #16243a;
+  --zj-bar: #1f5fae;
+  --zj-tile: #2a6fc4;
+  --zj-tile-hover: #3579cf;
+  --zj-news: #b8383f;
+  --zj-news-hover: #c8434a;
+  --zj-go: #1f9c3a;
+  --zj-go-hover: #24ad41;
 }
 
 * {
@@ -143,26 +174,83 @@ body {
     color 0.45s ease;
 }
 
-/* 壁纸层：由主题包决定，随主题切换平滑过渡 */
+/* 舞台层：底色 + 斜线纹理 + 可选壁纸，随主题包平滑切换。
+   纹理使用两层背景混合：上层为白色线条的 SVG，下层为主题线条色，
+   通过 background-blend-mode 叠加得到「浅底 + 彩色斜线」的效果。 */
 .zj-wallpaper {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background-image: var(--zj-wallpaper);
-  background-size: var(--zj-wallpaper-size);
-  background-position: var(--zj-wallpaper-position);
-  background-repeat: no-repeat;
-  transition: background-image 0.6s ease;
+  background-color: var(--zj-stage);
+  transition: background-color 0.45s ease;
   pointer-events: none;
 }
 
+/* 纹理层：把 SVG 作为遮罩，用主题线条色填充，线条颜色随主题变化 */
 .zj-wallpaper::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: var(--zj-bg);
+  background-color: var(--zj-pattern-line);
+  -webkit-mask-image: url('/pattern.svg');
+  mask-image: url('/pattern.svg');
+  -webkit-mask-size: cover;
+  mask-size: cover;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  opacity: 0.5;
+  transition: background-color 0.45s ease;
+}
+
+.dark .zj-wallpaper::after {
+  opacity: 0.55;
+}
+
+/* 壁纸层：主题包配置的自定义壁纸叠加在纹理之上 */
+.zj-wallpaper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--zj-wallpaper);
+  background-size: var(--zj-wallpaper-size);
+  background-position: var(--zj-wallpaper-position);
+  background-repeat: no-repeat;
   opacity: var(--zj-wallpaper-veil, 0.82);
-  transition: opacity 0.45s ease;
+  transition: background-image 0.6s ease, opacity 0.45s ease;
+}
+
+/* 启动器磁贴：直角色块 */
+.zj-tile {
+  background-color: var(--zj-tile);
+  border-radius: var(--zj-tile-radius);
+  transition: background-color 0.18s ease;
+}
+
+.zj-tile:hover {
+  background-color: var(--zj-tile-hover);
+}
+
+.zj-tile-news {
+  background-color: var(--zj-news);
+}
+
+.zj-tile-news:hover {
+  background-color: var(--zj-news-hover);
+}
+
+.zj-tile-go {
+  background-color: var(--zj-go);
+}
+
+.zj-tile-go:hover {
+  background-color: var(--zj-go-hover);
+}
+
+/* 顶部条 / 底部状态栏 */
+.zj-bar {
+  background-color: var(--zj-bar);
 }
 
 /* ============================================================

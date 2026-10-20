@@ -38,11 +38,16 @@ function log(ok, name, extra = '') {
     await page.reload({ waitUntil: 'networkidle' });
     await page.waitForTimeout(3500); // 等轮询检测失败
 
-    // 后端状态徽标
+    // 后端状态：底栏刷新图标 + 欢迎页提示文案
     const badge = await page.textContent('body');
+    const backendBtnTitle = await page
+      .$eval('button[aria-label="后端状态"]', (el) => el.getAttribute('title') || '')
+      .catch(() => '');
     log(
-      badge.includes('后端未启动') || badge.includes('后端未开启'),
+      badge.includes('本地 AI 与插件无需后端') ||
+        backendBtnTitle.includes('后端未开启'),
       '后端离线状态正确显示',
+      backendBtnTitle.slice(0, 20),
     );
 
     // 滚到第 2 页
@@ -88,15 +93,13 @@ function log(ok, name, extra = '') {
     await page.waitForTimeout(600);
 
     // 纯本地功能：功能广场应正常打开
-    // 精确点击「功能广场」卡片
+    // 精确点击「功能广场」磁贴
     await page.evaluate(() => {
-      const cards = Array.from(
-        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      const tiles = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-tile'),
       );
-      const target = cards.find(
-        (c) =>
-          c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
-          '功能广场',
+      const target = tiles.find(
+        (t) => t.textContent.trim().startsWith('功能广场'),
       );
       if (target) target.click();
     });

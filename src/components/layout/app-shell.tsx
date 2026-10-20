@@ -6,6 +6,7 @@ import { DashboardPage } from '@/components/pages/dashboard-page';
 import { LoginDialog } from '@/components/modals/login-dialog';
 import { CardDialog } from '@/components/modals/card-dialog';
 import { BackendGate } from '@/components/modals/backend-gate';
+import { StatusBar } from '@/components/layout/status-bar';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useThemeStore } from '@/store/theme-store';
@@ -25,6 +26,7 @@ export function AppShell() {
   const openLogin = useAuthStore((s) => s.openLogin);
   const themeLoading = useThemeStore((s) => s.loading);
   const activeCard = useAppStore((s) => s.activeCard);
+  const openCard = useAppStore((s) => s.openCard);
 
   /** 监听滚动位置，判断当前处于第几页 */
   useEffect(() => {
@@ -65,11 +67,13 @@ export function AppShell() {
         <section className="zj-snap-section" aria-label="欢迎页">
           <div className="flex min-h-0 flex-1 flex-col">
             <WelcomePage onEnter={() => scrollToPage(1)} />
+            <StatusBar onGo={() => scrollToPage(1)} />
           </div>
         </section>
         <section className="zj-snap-section" aria-label="功能汇总页">
           <div className="flex min-h-0 flex-1 flex-col">
             <DashboardPage active={activePage === 1} />
+            <StatusBar onGo={() => openCard('marketplace')} />
           </div>
         </section>
       </div>

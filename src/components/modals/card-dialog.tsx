@@ -5,13 +5,14 @@ import { motion } from 'framer-motion';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAppStore } from '@/store/app-store';
 import { usePluginStore } from '@/store/plugin-store';
+import { useAuthStore } from '@/store/auth-store';
 import { useThemeStore } from '@/store/theme-store';
 import { PluginHost } from '@/components/cards/plugin-host';
 import { MarketplacePanel } from '@/components/cards/marketplace-panel';
 import { SettingsPanel } from '@/components/cards/settings-panel';
 import { FriendsPanel } from '@/components/cards/friends-panel';
 import { GroupsPanel } from '@/components/cards/groups-panel';
-import { AnnouncementsCard } from '@/components/cards/announcements-card';
+import { AnnouncementsTile } from '@/components/cards/announcements-tile';
 
 /**
  * 卡片弹窗宿主：根据 activeCard 渲染对应内容。
@@ -26,6 +27,8 @@ export function CardDialog() {
     () => (activeCard?.startsWith('plugin:') ? activeCard.slice(7) : null),
     [activeCard],
   );
+
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   const module = usePluginStore((s) =>
     pluginId ? s.modules.find((m) => m.manifest.id === pluginId) : undefined,
@@ -81,7 +84,7 @@ export function CardDialog() {
           {activeCard === 'groups' && <GroupsPanel />}
           {activeCard === 'announcements' && (
             <div className="space-y-3">
-              <AnnouncementsCard />
+              <AnnouncementsTile isAdmin={isAdmin} />
             </div>
           )}
           {pluginId && module && <PluginHost pluginId={pluginId} />}
