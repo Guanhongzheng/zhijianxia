@@ -6,18 +6,16 @@ import {
   Megaphone,
   MessageSquare,
   Settings,
+  Sparkles,
   Users,
-  Wifi,
-  WifiOff,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
-import { useThemeStore } from '@/store/theme-store';
 import { ensureBackend } from '@/components/modals/backend-gate';
 import { AnnouncementsCard } from '@/components/cards/announcements-card';
 import { MarketplaceCard } from '@/components/cards/marketplace-card';
+import { TopBar } from '@/components/layout/top-bar';
 
 /**
  * 第 2 页：功能卡片汇总页
@@ -25,12 +23,9 @@ import { MarketplaceCard } from '@/components/cards/marketplace-card';
  */
 export function DashboardPage({ active }: { active: boolean }) {
   const backendOnline = useAppStore((s) => s.backendOnline);
-  const checking = useAppStore((s) => s.checking);
   const openCard = useAppStore((s) => s.openCard);
   const logged = useAuthStore((s) => s.logged);
   const isAdmin = useAuthStore((s) => s.isAdmin);
-  const mode = useThemeStore((s) => s.mode);
-  const toggleMode = useThemeStore((s) => s.toggleMode);
 
   useEffect(() => {
     if (active && backendOnline) {
@@ -39,41 +34,19 @@ export function DashboardPage({ active }: { active: boolean }) {
   }, [active, backendOnline]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-8 sm:py-10">
-      {/* 页头 */}
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">初来乍到</h2>
-          <p className="mt-0.5 text-xs text-[var(--zj-muted-fg)]">
-            欢迎来到智简匣，一切功能都在这里
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Badge variant={backendOnline ? 'success' : 'outline'}>
-            <span className="flex items-center gap-1">
-              {backendOnline ? (
-                <Wifi className="size-3" />
-              ) : (
-                <WifiOff className="size-3" />
-              )}
-              {checking ? '检测中…' : backendOnline ? '后端在线' : '后端未启动'}
-            </span>
-          </Badge>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={toggleMode}
-            aria-label="切换亮暗模式"
-            title={`当前：${mode === 'dark' ? '暗色' : '亮色'}模式`}
-          >
-            {mode === 'dark' ? '☀' : '☾'}
-          </Button>
-        </div>
-      </header>
+    <div className="flex h-full min-h-0 w-full flex-col">
+      {/* 顶部导航栏 */}
+      <div className="shrink-0 px-4 pt-4 sm:px-6 sm:pt-5">
+        <TopBar
+          title="初来乍到"
+          subtitle="欢迎来到智简匣，一切功能都在这里"
+          icon={Sparkles}
+        />
+      </div>
 
       {/* 卡片区：按内容自适应高度，不强制铺满 */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-3">
         {/* 公告卡片 */}
         <div className="lg:col-span-2">
           <CardShell
@@ -132,6 +105,7 @@ export function DashboardPage({ active }: { active: boolean }) {
           desc="AI 引擎、局域网连接与通用设置"
           onClick={() => openCard('settings')}
         />
+        </div>
       </div>
     </div>
   );

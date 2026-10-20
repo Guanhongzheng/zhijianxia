@@ -132,14 +132,17 @@ function log(ok, name, extra = '') {
     );
 
     // ---------- 5. 第 2 页功能汇总 ----------
-    const dashTitle = await page.$eval('.zj-snap-section:nth-child(2) h2', (el) => el.textContent);
+    const dashTitle = await page.$eval('.zj-snap-section:nth-child(2) h1', (el) => el.textContent);
     log(
       (dashTitle ?? '').includes('初来乍到'),
       '第 2 页标题为「初来乍到」',
       (dashTitle ?? '').slice(0, 20),
     );
 
-    const dashSub = await page.$eval('.zj-snap-section:nth-child(2) header p', (el) => el.textContent);
+    const dashSub = await page.$eval(
+      '.zj-snap-section:nth-child(2) h1 + p',
+      (el) => el.textContent,
+    );
     log(
       (dashSub ?? '').includes('欢迎'),
       '第 2 页标题下方为欢迎语',
@@ -158,16 +161,26 @@ function log(ok, name, extra = '') {
       '不再单独显示「我的插件」分组',
     );
 
-    // 启动插件改为右下角入口，不占用卡片位
-    const cornerStart = await page.$$eval('button', (els) => {
-      const b = els.find((e) => e.textContent.includes('启动'));
-      return b ? b.textContent.trim() : '';
-    });
+    // 启动插件位于底部导航栏，不占用卡片位
+    const cornerStart = await page.$$eval(
+      '.zj-snap-section:nth-child(2) footer button',
+      (els) => {
+        const b = els.find((e) => e.textContent.includes('启动'));
+        return b ? b.textContent.trim() : '';
+      },
+    );
     log(
       cornerStart.includes('启动'),
-      '启动插件为右下角入口按钮（非卡片）',
+      '启动插件为底部导航栏入口（非卡片）',
       cornerStart.slice(0, 20),
     );
+
+    // 上下导航栏均存在
+    const navBars = await page.$$eval(
+      '.zj-snap-section:nth-child(2) header, .zj-snap-section:nth-child(2) footer',
+      (els) => els.length,
+    );
+    log(navBars === 2, '第 2 页具备上导航栏与下导航栏');
 
     // 公告内容（后端在线时应加载出来）
     await page.waitForTimeout(2000);
@@ -235,14 +248,17 @@ function log(ok, name, extra = '') {
 
     // ---------- 9. 插件卡片出现在汇总页 ----------
     await page.waitForTimeout(800);
-    // 已安装插件应体现在右下角启动按钮上
-    const launcher = await page.$$eval('button', (els) => {
-      const b = els.find((e) => e.textContent.includes('启动'));
-      return b ? b.textContent.trim() : '';
-    });
+    // 已安装插件应体现在底部导航栏的启动入口上
+    const launcher = await page.$$eval(
+      '.zj-snap-section:nth-child(2) footer button',
+      (els) => {
+        const b = els.find((e) => e.textContent.includes('启动'));
+        return b ? b.textContent.trim() : '';
+      },
+    );
     log(
       (launcher ?? '').length > 0,
-      '右下角启动按钮显示当前可启动的插件',
+      '底部导航栏启动入口显示当前可启动的插件',
       launcher.slice(0, 20),
     );
 
