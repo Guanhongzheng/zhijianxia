@@ -133,16 +133,32 @@ function log(ok, name, extra = '') {
     // ---------- 5. 第 2 页功能汇总 ----------
     const dashTitle = await page.$eval('.zj-snap-section:nth-child(2) h2', (el) => el.textContent);
     log(
-      (dashTitle ?? '').includes('功能汇总'),
-      '第 2 页为功能卡片汇总页',
+      (dashTitle ?? '').includes('初来乍到'),
+      '第 2 页标题为「初来乍到」',
       (dashTitle ?? '').slice(0, 20),
     );
 
-    const noticeTitle = await page.$eval('.zj-snap-section:nth-child(2) h3', (el) => el.textContent).catch(() => '');
+    const dashSub = await page.$eval('.zj-snap-section:nth-child(2) header p', (el) => el.textContent);
     log(
-      (noticeTitle ?? '').includes('公告'),
-      '公告卡片组位于汇总页靠前位置',
-      (noticeTitle ?? '').slice(0, 20),
+      (dashSub ?? '').includes('欢迎'),
+      '第 2 页标题下方为欢迎语',
+      (dashSub ?? '').slice(0, 24),
+    );
+
+    // 第 2 页应为 6 张卡片：公告、启动插件、好友、群聊、功能广场、系统设置
+    const cardTitles = await page.$$eval(
+      '.zj-snap-section:nth-child(2) .zj-card p.text-sm.font-medium',
+      (els) => els.map((e) => e.textContent.trim()),
+    );
+    const expected = ['公告', '启动插件', '好友', '群聊', '功能广场', '系统设置'];
+    log(
+      expected.every((t) => cardTitles.includes(t)),
+      '第 2 页包含全部 6 张卡片（公告/启动插件/好友/群聊/功能广场/系统设置）',
+      cardTitles.join('、'),
+    );
+    log(
+      !cardTitles.includes('我的插件'),
+      '不再单独显示「我的插件」分组',
     );
 
     // 公告内容（后端在线时应加载出来）
@@ -158,7 +174,18 @@ function log(ok, name, extra = '') {
     log(true, '统一骨架屏组件已挂载（当前页面实例数）', String(skeletonCount));
 
     // ---------- 7. 功能广场 ----------
-    await page.click('.zj-snap-section:nth-child(2) button:has-text("打开功能广场")');
+    // 精确点击「功能广场」卡片（标题精确匹配，避免匹配到父容器）
+    await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      );
+      const target = cards.find(
+        (c) =>
+          c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
+          '功能广场',
+      );
+      if (target) target.click();
+    });
     await page.waitForTimeout(1200);
     const mkt = await page.textContent('[role="dialog"]');
     log((mkt ?? '').includes('功能广场'), '功能广场弹窗打开');
@@ -200,10 +227,14 @@ function log(ok, name, extra = '') {
 
     // ---------- 9. 插件卡片出现在汇总页 ----------
     await page.waitForTimeout(800);
-    const grid = await page.textContent('body');
+    // 已安装插件应集中出现在「启动插件」卡片内
+    const launcher = await page.$eval(
+      '.zj-snap-section:nth-child(2) .zj-card:has-text("启动插件")',
+      (el) => el.textContent,
+    ).catch(() => '');
     log(
-      (grid ?? '').includes('番茄专注计时器'),
-      '已安装插件出现在汇总页插件卡片组',
+      (launcher ?? '').includes('番茄专注计时器'),
+      '已安装插件集中显示在「启动插件」卡片内',
     );
 
     // ---------- 10. 主题切换 ----------

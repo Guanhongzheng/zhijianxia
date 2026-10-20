@@ -88,9 +88,18 @@ function log(ok, name, extra = '') {
     await page.waitForTimeout(600);
 
     // 纯本地功能：功能广场应正常打开
-    await page.click(
-      '.zj-snap-section:nth-child(2) button:has-text("打开功能广场")',
-    );
+    // 精确点击「功能广场」卡片
+    await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      );
+      const target = cards.find(
+        (c) =>
+          c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
+          '功能广场',
+      );
+      if (target) target.click();
+    });
     await page.waitForTimeout(1500);
     const mkt = await page.textContent('[role="dialog"]').catch(() => '');
     log(

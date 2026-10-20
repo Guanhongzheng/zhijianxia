@@ -27,13 +27,13 @@ export function WelcomePage({ onEnter }: { onEnter: () => void }) {
   const toggleMode = useThemeStore((s) => s.toggleMode);
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col justify-center px-5 py-12 sm:px-8">
+    <div className="flex h-full min-h-0 w-full flex-col px-5 py-6 sm:px-8 sm:py-8">
       {/* 顶部品牌区 */}
       <motion.header
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="mb-10 flex items-center justify-between gap-4"
+        className="flex shrink-0 items-center justify-between gap-4"
       >
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--zj-accent)] text-[var(--zj-accent-fg)]">
@@ -64,11 +64,12 @@ export function WelcomePage({ onEnter }: { onEnter: () => void }) {
         </div>
       </motion.header>
 
-      {/* 主文案 */}
+      {/* 主文案 —— 占据剩余空间并垂直居中 */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
+        className="flex min-h-0 flex-1 flex-col justify-center"
       >
         <h2 className="max-w-2xl text-3xl leading-tight font-semibold tracking-tight sm:text-4xl">
           把 AI 装进你自己的设备，
@@ -86,7 +87,7 @@ export function WelcomePage({ onEnter }: { onEnter: () => void }) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
-        className="mt-8 grid gap-3 sm:grid-cols-3"
+        className="mt-6 grid max-w-4xl shrink-0 gap-3 sm:grid-cols-3"
       >
         <FeatureCard
           icon={<Cpu className="size-4" />}
@@ -110,7 +111,7 @@ export function WelcomePage({ onEnter }: { onEnter: () => void }) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="mt-8"
+        className="mt-5 max-w-4xl shrink-0"
       >
         {logged && user ? (
           <div className="zj-card flex items-center justify-between gap-4 p-5">
@@ -161,7 +162,7 @@ export function WelcomePage({ onEnter }: { onEnter: () => void }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.5, duration: 0.4 }}
-        className="mt-10 flex items-center justify-center gap-1.5 text-xs text-[var(--zj-muted-fg)]"
+        className="mt-6 flex shrink-0 items-center justify-center gap-1.5 text-xs text-[var(--zj-muted-fg)]"
       >
         <span>向下滚动进入功能汇总页</span>
         <motion.span

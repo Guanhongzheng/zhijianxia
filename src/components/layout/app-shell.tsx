@@ -63,10 +63,14 @@ export function AppShell() {
     <>
       <div ref={containerRef} className="zj-scroll-snap">
         <section className="zj-snap-section" aria-label="欢迎页">
-          <WelcomePage onEnter={() => scrollToPage(1)} />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <WelcomePage onEnter={() => scrollToPage(1)} />
+          </div>
         </section>
         <section className="zj-snap-section" aria-label="功能汇总页">
-          <DashboardPage active={activePage === 1} />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <DashboardPage active={activePage === 1} />
+          </div>
         </section>
       </div>
 

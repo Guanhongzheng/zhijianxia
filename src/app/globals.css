@@ -190,6 +190,9 @@ body {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
+  /* 内部内容使用 h-full 铺满浏览器可视区 */
+  display: flex;
+  flex-direction: column;
 }
 
 .zj-snap-section::-webkit-scrollbar {

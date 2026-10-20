@@ -11,6 +11,7 @@ import { MarketplacePanel } from '@/components/cards/marketplace-panel';
 import { SettingsPanel } from '@/components/cards/settings-panel';
 import { FriendsPanel } from '@/components/cards/friends-panel';
 import { GroupsPanel } from '@/components/cards/groups-panel';
+import { AnnouncementsCard } from '@/components/cards/announcements-card';
 
 /**
  * 卡片弹窗宿主：根据 activeCard 渲染对应内容。
@@ -78,6 +79,11 @@ export function CardDialog() {
           {activeCard === 'settings' && <SettingsPanel />}
           {activeCard === 'friends' && <FriendsPanel />}
           {activeCard === 'groups' && <GroupsPanel />}
+          {activeCard === 'announcements' && (
+            <div className="space-y-3">
+              <AnnouncementsCard />
+            </div>
+          )}
           {pluginId && module && <PluginHost pluginId={pluginId} />}
           {pluginId && !module && (
             <p className="py-8 text-center text-sm text-[var(--zj-muted-fg)]">

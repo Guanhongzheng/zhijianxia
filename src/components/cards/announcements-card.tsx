@@ -52,7 +52,7 @@ export function AnnouncementsCard() {
   // 后端离线：不显示骨架屏，直接给出友好提示
   if (!backendOnline) {
     return (
-      <div className="zj-card flex flex-col items-center gap-2 px-5 py-8 text-center">
+      <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
         <Megaphone className="size-5 text-[var(--zj-muted-fg)]" />
         <p className="text-sm">公告需要后端服务支持</p>
         <p className="text-xs text-[var(--zj-muted-fg)]">
@@ -65,7 +65,7 @@ export function AnnouncementsCard() {
   // 加载中：统一骨架屏
   if (loading || !loaded) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-2.5 p-3">
         <SkeletonNotice />
         <SkeletonNotice />
       </div>
@@ -74,9 +74,9 @@ export function AnnouncementsCard() {
 
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-2.5 p-3">
         {notices.length === 0 ? (
-          <div className="zj-card col-span-full px-5 py-8 text-center">
+          <div className="px-5 py-8 text-center">
             <p className="text-sm text-[var(--zj-muted-fg)]">
               暂无公告
               {isAdmin ? '，点击右上角「新增公告」发布第一条' : ''}
@@ -89,7 +89,7 @@ export function AnnouncementsCard() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="zj-card flex flex-col gap-2 p-4"
+              className="flex flex-col gap-1.5 rounded-md border border-[var(--zj-border)] bg-[var(--zj-bg)] p-3"
             >
               <div className="flex items-start justify-between gap-2">
                 <h4 className="text-sm leading-snug font-medium">{notice.title}</h4>
