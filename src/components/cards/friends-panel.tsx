@@ -21,6 +21,7 @@ import { avatarColor } from '@/lib/utils';
 /** 好友卡片面板 */
 export function FriendsPanel() {
   const friends = useAppStore((s) => s.friends);
+  const friendRequests = useAppStore((s) => s.friendRequests);
   const loading = useAppStore((s) => s.friendsLoading);
   const onlineUids = useAppStore((s) => s.onlineUids);
   const lan = useAppStore((s) => s.lan);
@@ -49,8 +50,9 @@ export function FriendsPanel() {
     );
   }
 
-  const pending = friends.filter((f) => f.status === 'pending');
-  const accepted = friends.filter((f) => f.status !== 'pending');
+  // 待处理请求来自后端 incoming 段，已建立好友来自 friends 段
+  const pending = friendRequests;
+  const accepted = friends;
 
   return (
     <div className="space-y-4">
@@ -117,7 +119,7 @@ export function FriendsPanel() {
           <div className="space-y-2">
             {pending.map((f) => (
               <FriendRow
-                key={`pending-${f.id}`}
+                key={`pending-${f.id ?? f.uid}`}
                 uid={f.uid}
                 nickname={f.nickname}
                 bio={f.bio}
@@ -126,8 +128,9 @@ export function FriendsPanel() {
                   <>
                     <Button
                       size="xs"
+                      disabled={f.id === undefined}
                       onClick={async () => {
-                        if (!token) return;
+                        if (!token || f.id === undefined) return;
                         try {
                           await acceptFriend(lan, token, f.id);
                           notify('已接受好友请求', 'success');
@@ -145,8 +148,9 @@ export function FriendsPanel() {
                     <Button
                       size="xs"
                       variant="ghost"
+                      disabled={f.id === undefined}
                       onClick={async () => {
-                        if (!token) return;
+                        if (!token || f.id === undefined) return;
                         try {
                           await rejectFriend(lan, token, f.id);
                           await loadFriends();

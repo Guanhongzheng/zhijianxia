@@ -151,6 +151,10 @@ npm run start     # 启动生产服务
 | `npm run server:init` | 初始化后端数据库（建表 + 种子数据） |
 | `npm run plugins:build` | 打包可下载插件为 `.plugin` 文件 |
 | `npm run plugins:verify` | 插件内核自检（109 + 35 项断言） |
+| `npm run contract` | 前后端接口契约断言（25 项，需后端已启动） |
+| `npm run e2e` | 端到端验证（26 项，需前后端已启动） |
+| `npm run e2e:offline` | 后端离线场景验证（8 项） |
+| `npm run e2e:pollution` | 污染数据自动恢复验证（6 项） |
 | `npm run plugins:typecheck` | 插件目录独立类型校验 |
 
 ---
@@ -236,6 +240,35 @@ npm run server
 | GET | `/api/ai/config` | 读取后端 AI 配置（不含明文 Key） | ✓ | - |
 | PUT | `/api/ai/config` | 保存后端 AI 配置 | ✓ | ✓ |
 | POST | `/api/ai/chat` | 转发外部模型请求 | ✓ | - |
+
+### 接口契约约定（重要）
+
+后端对**单条资源**统一使用「包装结构」返回，对**列表**使用 `{ xxx: [] }` 返回：
+
+| 接口 | 返回结构 |
+|------|----------|
+| `POST /api/auth/register` · `login` | `{ token, user }` |
+| `GET` · `PATCH /api/auth/me` | `{ user }` |
+| `GET /api/notices` | `{ notices: [] }` |
+| `POST` · `PUT /api/notices` | `{ notice }` |
+| `GET /api/friends` | `{ friends: [], incoming: [], outgoing: [] }` |
+| `GET /api/groups` | `{ groups: [] }` |
+| `POST` · `GET /api/groups/:groupId` | `{ group }` / `{ group, members }` |
+| `GET /api/messages` | `{ messages: [] }` |
+| `GET` · `PUT /api/ai/config` | `{ base, model, timeout, temperature, hasKey }` |
+| `POST /api/ai/chat` | `{ content, model, usage, finishReason }` |
+
+> ⚠️ **字段名差异**：后端 AI 配置的地址字段名为 `base`（会自动补全为 `.../chat/completions`），
+> 前端领域模型统一为 `apiUrl`，转换在 `src/lib/backend/api.ts` 中完成。
+
+**前端适配层**：`src/lib/backend/api.ts` 负责把上述包装结构解包成前端领域模型，
+调用方（store / 组件）拿到的永远是扁平的 `UserProfile` / `Notice` / `Group` / `Friend`。
+
+```bash
+npm run contract   # 断言前后端契约一致（25 项）
+```
+
+修改任何一侧的返回结构，都必须同步另一侧并跑 `npm run contract`。
 
 ### WebSocket 协议
 

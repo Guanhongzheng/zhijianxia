@@ -6,6 +6,8 @@ const { chromium } = require('playwright-core');
 const CHROME =
   'C:/Users/30386/.agent-browser/browsers/chrome-155.0.8059.84/chrome.exe';
 
+const BASE = process.env.ZJ_BASE || 'http://localhost:3100';
+
 const results = [];
 function log(ok, name, extra = '') {
   results.push({ ok, name, extra });
@@ -24,7 +26,7 @@ function log(ok, name, extra = '') {
 
   try {
     // 强制把后端地址指向一个不存在的端口，模拟后端未启动
-    await page.goto('http://localhost:3100', { waitUntil: 'networkidle' });
+    await page.goto(BASE, { waitUntil: 'networkidle' });
     await page.waitForTimeout(1500);
 
     await page.evaluate(() => {

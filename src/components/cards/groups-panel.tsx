@@ -105,7 +105,7 @@ export function GroupsPanel() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{g.name}</p>
                 <p className="truncate text-[11px] text-[var(--zj-muted-fg)]">
-                  {g.groupId} · {g.members?.length ?? 0} 位成员
+                  {g.groupId} · {g.memberCount ?? g.members?.length ?? 0} 位成员
                 </p>
               </div>
             </motion.button>
@@ -286,7 +286,7 @@ function GroupChatView({
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{group.name}</p>
           <p className="truncate text-[11px] text-[var(--zj-muted-fg)]">
-            {group.groupId} · {group.members?.length ?? 0} 位成员
+            {group.groupId} · {group.memberCount ?? group.members?.length ?? 0} 位成员
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

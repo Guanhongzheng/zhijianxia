@@ -48,7 +48,10 @@ export interface AppState {
   refreshNotices: () => Promise<void>;
 
   // ---- 好友 ----
+  /** 已建立的好友 */
   friends: Friend[];
+  /** 收到的待处理好友请求 */
+  friendRequests: Friend[];
   friendsLoading: boolean;
   onlineUids: string[];
   loadFriends: () => Promise<void>;
@@ -121,6 +124,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // ---- 好友 ----
   friends: [],
+  friendRequests: [],
   friendsLoading: false,
   onlineUids: [],
 
@@ -128,15 +132,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     const lan = get().lan;
     const token = readLocal<string | null>(TOKEN_KEY, null);
     if (!token) {
-      set({ friends: [], friendsLoading: false });
+      set({ friends: [], friendRequests: [], friendsLoading: false });
       return;
     }
     set({ friendsLoading: true });
     try {
       const list = await fetchFriends(lan, token);
-      set({ friends: list, friendsLoading: false });
+      set({
+        friends: list.friends,
+        friendRequests: list.incoming,
+        friendsLoading: false,
+      });
     } catch {
-      set({ friends: [], friendsLoading: false });
+      set({ friends: [], friendRequests: [], friendsLoading: false });
     }
   },
 

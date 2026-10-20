@@ -50,8 +50,12 @@ export function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-/** 生成随机渐变头像用的色值 */
-export function avatarColor(seed: string) {
+/**
+ * 生成头像底色（依据标识散列到固定调色板）。
+ * 参数可能缺失（接口异常、字段改名等），此处做纵深防御：
+ * 任何非法输入都退回默认色，绝不抛错导致整页白屏。
+ */
+export function avatarColor(seed?: string | null): string {
   const palette = [
     '#4f6bed',
     '#12a594',
@@ -62,9 +66,11 @@ export function avatarColor(seed: string) {
     '#e93d82',
     '#3f9e4a',
   ];
+  const text = typeof seed === 'string' ? seed : '';
+  if (!text) return palette[0];
   let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
   }
   return palette[hash % palette.length];
 }

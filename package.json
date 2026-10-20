@@ -17,7 +17,9 @@
     "server": "node server/src/index.js",
     "server:init": "node server/src/init-db.js",
     "e2e": "node scripts/zj-e2e.js",
-    "e2e:offline": "node scripts/zj-e2e-offline.js"
+    "e2e:offline": "node scripts/zj-e2e-offline.js",
+    "contract": "node scripts/contract-test.mjs",
+    "e2e:pollution": "node scripts/zj-e2e-pollution.js"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",

@@ -89,6 +89,47 @@ function log(ok, name, extra = '') {
     const stillDialog = await page.$('[role="dialog"]');
     log(!stillDialog, '注册后自动关闭登录弹窗', nickname);
 
+    // ---------- 4.5 刷新页面恢复登录态（本次崩溃的触发路径） ----------
+    await page.reload({ waitUntil: 'networkidle', timeout: 60000 });
+    await page.waitForTimeout(3000);
+
+    const afterReload = await page.evaluate(() => ({
+      // 读取 localStorage 中持久化的用户资料
+      cached: (() => {
+        try {
+          return JSON.parse(localStorage.getItem('zj-user') || 'null');
+        } catch {
+          return 'PARSE_ERROR';
+        }
+      })(),
+      // 欢迎页是否渲染出用户卡片（uid 非空）
+      bodyText: document.body.innerText,
+    }));
+
+    log(
+      afterReload.cached && typeof afterReload.cached.uid === 'string' &&
+        afterReload.cached.uid.length > 0,
+      '刷新后 localStorage 中的用户资料结构正确（含 uid）',
+      JSON.stringify(afterReload.cached).slice(0, 80),
+    );
+    log(
+      afterReload.bodyText.includes('UID ') && afterReload.bodyText.includes(nickname),
+      '刷新后欢迎页正确渲染已登录用户卡片（不再崩溃）',
+      nickname,
+    );
+
+    // 再次滚到第 2 页，确认不会重复弹出登录弹窗
+    await page.evaluate(() => {
+      const el = document.querySelector('.zj-scroll-snap');
+      el.scrollTo({ top: el.clientHeight, behavior: 'instant' });
+    });
+    await page.waitForTimeout(2000);
+    const dialogAfterReload = await page.$('[role="dialog"]');
+    log(
+      !dialogAfterReload,
+      '已登录状态下滚动到第 2 页不再弹出登录弹窗',
+    );
+
     // ---------- 5. 第 2 页功能汇总 ----------
     const dashTitle = await page.$eval('.zj-snap-section:nth-child(2) h2', (el) => el.textContent);
     log(
