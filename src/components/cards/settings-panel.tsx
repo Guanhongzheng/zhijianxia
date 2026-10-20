@@ -7,11 +7,13 @@ import {
   Info,
   KeyRound,
   Network,
+  Palette,
   Plug,
   RefreshCw,
   RotateCcw,
   ShieldCheck,
   Trash2,
+  User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +23,6 @@ import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useThemeStore } from '@/store/theme-store';
@@ -33,51 +34,67 @@ import {
 } from '@/lib/backend/api';
 import { idbClear } from '@/lib/storage/idb';
 import { getLocalAiState, loadLocalModel } from '@/lib/ai/local-engine';
+import { ProfileSettings } from '@/components/cards/profile-settings';
+import { PersonalizationSettings } from '@/components/cards/personalization-settings';
+import { cn } from '@/lib/utils';
 
-/** 系统设置面板 */
+/** 设置项定义（左侧导航） */
+const SETTINGS_SECTIONS = [
+  { id: 'profile', label: '个人资料', icon: User },
+  { id: 'personalization', label: '个性化', icon: Palette },
+  { id: 'ai', label: 'AI 引擎', icon: Cpu },
+  { id: 'lan', label: '局域网', icon: Network },
+  { id: 'api', label: 'API', icon: KeyRound },
+  { id: 'general', label: '通用', icon: Database },
+  { id: 'about', label: '关于', icon: Info },
+] as const;
+
+type SectionId = (typeof SETTINGS_SECTIONS)[number]['id'];
+
+/** 系统设置面板 —— 左侧导航 + 右侧内容 */
 export function SettingsPanel() {
-  return (
-    <div className="max-h-[70dvh] overflow-y-auto pr-1">
-      <Tabs defaultValue="ai">
-        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5">
-          <TabsTrigger value="ai">
-            <Cpu className="size-3.5" />
-            AI 引擎
-          </TabsTrigger>
-          <TabsTrigger value="lan">
-            <Network className="size-3.5" />
-            局域网
-          </TabsTrigger>
-          <TabsTrigger value="api">
-            <KeyRound className="size-3.5" />
-            API
-          </TabsTrigger>
-          <TabsTrigger value="general">
-            <Database className="size-3.5" />
-            通用
-          </TabsTrigger>
-          <TabsTrigger value="about">
-            <Info className="size-3.5" />
-            关于
-          </TabsTrigger>
-        </TabsList>
+  const [section, setSection] = useState<SectionId>('profile');
 
-        <TabsContent value="ai">
-          <AiEngineSettings />
-        </TabsContent>
-        <TabsContent value="lan">
-          <LanSettings />
-        </TabsContent>
-        <TabsContent value="api">
-          <ApiSettings />
-        </TabsContent>
-        <TabsContent value="general">
-          <GeneralSettings />
-        </TabsContent>
-        <TabsContent value="about">
-          <AboutSettings />
-        </TabsContent>
-      </Tabs>
+  return (
+    <div className="flex max-h-[72dvh] gap-4">
+      {/* 左侧导航 */}
+      <nav className="w-36 shrink-0 space-y-1 overflow-y-auto pr-1 sm:w-40">
+        {SETTINGS_SECTIONS.map((item) => {
+          const active = section === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSection(item.id)}
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs transition-colors',
+                active
+                  ? 'bg-[var(--zj-accent-soft)] font-medium text-[var(--zj-fg)]'
+                  : 'text-[var(--zj-muted-fg)] hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]',
+              )}
+            >
+              <item.icon
+                className={cn(
+                  'size-3.5 shrink-0',
+                  active ? 'text-[var(--zj-accent)]' : '',
+                )}
+              />
+              <span className="truncate">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* 右侧内容 */}
+      <div className="min-w-0 flex-1 overflow-y-auto pr-1">
+        {section === 'profile' && <ProfileSettings />}
+        {section === 'personalization' && <PersonalizationSettings />}
+        {section === 'ai' && <AiEngineSettings />}
+        {section === 'lan' && <LanSettings />}
+        {section === 'api' && <ApiSettings />}
+        {section === 'general' && <GeneralSettings />}
+        {section === 'about' && <AboutSettings />}
+      </div>
     </div>
   );
 }

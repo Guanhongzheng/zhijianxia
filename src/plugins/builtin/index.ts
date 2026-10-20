@@ -11,7 +11,6 @@ import weatherCard, { manifest as weatherManifest } from './weather-card';
 import copywritingCard, { manifest as copywritingManifest } from './copywriting-card';
 import memoCard, { manifest as memoManifest } from './memo-card';
 import quoteCard, { manifest as quoteManifest } from './quote-card';
-import themeCenterCard, { manifest as themeCenterManifest } from './theme-center-card';
 
 /** 预装插件模块集合 */
 export const builtinPluginModules: PluginModule[] = [
@@ -19,7 +18,6 @@ export const builtinPluginModules: PluginModule[] = [
   { manifest: copywritingManifest, Component: copywritingCard },
   { manifest: memoManifest, Component: memoCard },
   { manifest: quoteManifest, Component: quoteCard },
-  { manifest: themeCenterManifest, Component: themeCenterCard },
 ];
 
 /** 预装插件的加载器映射：id -> 动态导入函数 */
@@ -40,10 +38,6 @@ export const builtinModules: Record<string, PluginModuleLoader> = {
     const mod = await import('./quote-card');
     return { manifest: mod.manifest, Component: mod.default };
   },
-  'theme-center-card': async () => {
-    const mod = await import('./theme-center-card');
-    return { manifest: mod.manifest, Component: mod.default };
-  },
 };
 
-export { weatherManifest, copywritingManifest, memoManifest, quoteManifest, themeCenterManifest };
+export { weatherManifest, copywritingManifest, memoManifest, quoteManifest };

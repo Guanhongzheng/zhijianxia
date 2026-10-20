@@ -13,6 +13,12 @@ import {
 } from '@/lib/theme/types';
 import { readLocal, writeLocal } from '@/lib/utils';
 import { getWallpaperBlob, idbSet, saveWallpaperBlob } from '@/lib/storage/idb';
+import {
+  applyDensity,
+  readDensity,
+  saveDensity,
+  type Density,
+} from '@/lib/theme/density';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -27,11 +33,14 @@ interface ThemeState {
   loading: boolean;
   /** 当前壁纸的 objectURL（用户自定义壁纸从 IndexedDB 读取后生成） */
   wallpaperUrl: string | null;
+  /** 界面密度：小 / 中 / 大 */
+  density: Density;
 
   init: () => Promise<void>;
   setMode: (mode: ThemeMode) => void;
   toggleMode: () => void;
   setAccent: (hex: string) => void;
+  setDensity: (density: Density) => void;
   applyThemePack: (id: string) => void;
   saveCustomPack: (pack: ThemePack) => void;
   removeCustomPack: (id: string) => void;
@@ -112,6 +121,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   mode: 'light',
   loading: true,
   wallpaperUrl: null,
+  density: 'sm',
 
   /** 初始化：读取 LocalStorage 中的主题包与当前选择 */
   init: async () => {
@@ -123,7 +133,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       ? activePackId
       : packs[0].id;
 
-    set({ packs, activePackId: safePackId, mode });
+    const density = readDensity();
+    applyDensity(density);
+
+    set({ packs, activePackId: safePackId, mode, density });
 
     const pack = packs.find((p) => p.id === safePackId) ?? packs[0];
     buildCssVars(pack, mode);
@@ -134,6 +147,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     // 同步 <html> 的 dark class
     document.documentElement.classList.toggle('dark', mode === 'dark');
     set({ loading: false });
+  },
+
+  setDensity: (density) => {
+    saveDensity(density);
+    set({ density });
   },
 
   setMode: (mode) => {

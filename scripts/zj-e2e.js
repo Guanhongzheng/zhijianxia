@@ -262,6 +262,111 @@ function log(ok, name, extra = '') {
       launcher.slice(0, 20),
     );
 
+    // ---------- 9.5 设置面板：左侧导航 / 个人资料 / 个性化 ----------
+
+    // 打开设置
+    await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      );
+      const t = cards.find(
+        (c) => c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
+          '系统设置',
+      );
+      if (t) t.click();
+    });
+    await page.waitForTimeout(1500);
+
+    // 左侧导航
+    const navItems = await page.$$eval(
+      '[role="dialog"] nav button',
+      (els) => els.map((e) => e.textContent.trim()),
+    );
+    log(
+      navItems.includes('个人资料') && navItems.includes('个性化'),
+      '设置面板采用左侧导航且含个人资料与个性化',
+      navItems.join('、'),
+    );
+
+    // 个人资料可编辑
+    const hasNicknameInput = await page.$('#profile-nickname');
+    log(!!hasNicknameInput, '个人资料含可编辑的昵称输入框');
+
+    // 个性化：主题包 + 界面大小
+    await page.evaluate(() => {
+      const nav = document.querySelector('[role="dialog"] nav');
+      const b = Array.from(nav.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === '个性化',
+      );
+      if (b) b.click();
+    });
+    await page.waitForTimeout(1000);
+
+    const personalization = await page.textContent('[role="dialog"]');
+    log(
+      (personalization ?? '').includes('主题包'),
+      '个性化含主题包管理（原全局主题中心插件已并入）',
+    );
+    log(
+      (personalization ?? '').includes('界面大小'),
+      '个性化含界面大小设置',
+    );
+
+    // 切换到大档，验证根字号变化
+    const beforeFont = await page.$eval(
+      'html',
+      (el) => getComputedStyle(el).fontSize,
+    );
+    await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const btn = Array.from(dlg.querySelectorAll('button')).find(
+        (b) => b.textContent.trim() === '大',
+      );
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(700);
+    const afterFont = await page.$eval(
+      'html',
+      (el) => getComputedStyle(el).fontSize,
+    );
+    log(
+      parseFloat(afterFont) > parseFloat(beforeFont),
+      '界面大小切换立即生效',
+      `${beforeFont} → ${afterFont}`,
+    );
+
+    // 还原为小
+    await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const btn = Array.from(dlg.querySelectorAll('button')).find(
+        (b) => b.textContent.trim() === '小',
+      );
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(500);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+
+    // 全局主题中心插件已移除
+    const themePluginGone = await page.evaluate(
+      () => !document.body.innerText.includes('全局主题中心'),
+    );
+    log(themePluginGone, '「全局主题中心」插件已移除');
+
+    // 底栏插件切换器
+    const switcher = await page.$('button[aria-label="展开插件列表"]');
+    log(!!switcher, '底栏提供可展开的插件切换器');
+    if (switcher) {
+      await switcher.click();
+      await page.waitForTimeout(700);
+      const expanded = await page.evaluate(
+        () => document.body.innerText.includes('已安装'),
+      );
+      log(expanded, '插件切换器展开后显示已安装插件列表');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
+    }
+
     // ---------- 10. 主题切换 ----------
     const beforeBg = await page.$eval('body', (el) => getComputedStyle(el).backgroundColor);
     await page.click('.zj-snap-section:nth-child(2) button[aria-label="切换亮暗模式"]');

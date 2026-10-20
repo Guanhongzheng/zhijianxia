@@ -73,7 +73,6 @@ const SIZE_TABLE: Record<string, number> = {
   'copywriting-card': 11,
   'memo-card': 9,
   'quote-card': 7,
-  'theme-center-card': 8,
   pomodoro: 12,
   'music-player': 15,
   'text-summary': 10,

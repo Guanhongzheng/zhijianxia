@@ -81,6 +81,9 @@
    ============================================================ */
 
 :root {
+  /* 界面密度缩放（小 / 中 / 大） */
+  --zj-density-scale: 1rem;
+
   /* 默认亮色主题包 */
   --zj-bg: #f6f7f9;
   --zj-fg: #1c1f24;
@@ -122,6 +125,20 @@
 html,
 body {
   height: 100%;
+  /* 界面密度：根字号随 data-density 变化，rem 单位的尺寸随之缩放 */
+  font-size: var(--zj-density-scale, 1rem);
+}
+
+/* 界面密度：覆盖 Tailwind 字号变量（v4 中字号为 px，需显式换算为 rem） */
+html {
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
 }
 
 body {

@@ -1,10 +1,10 @@
 'use client';
 
-import { motion } from 'framer-motion';
-import { CircleDot, LogIn, Play, RefreshCw, Sun, Moon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Boxes, CircleDot, LogIn, Play, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
-import { useThemeStore } from '@/store/theme-store';
 import { usePluginStore } from '@/store/plugin-store';
 import { avatarColor } from '@/lib/utils';
 
@@ -19,13 +19,32 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
   const backendOnline = useAppStore((s) => s.backendOnline);
   const checkBackend = useAppStore((s) => s.checkBackend);
   const openCard = useAppStore((s) => s.openCard);
-  const mode = useThemeStore((s) => s.mode);
-  const toggleMode = useThemeStore((s) => s.toggleMode);
   const modules = usePluginStore((s) => s.modules);
   const installed = usePluginStore((s) => s.installed);
 
   const installedModules = modules.filter((m) => installed.includes(m.manifest.id));
   const firstPlugin = installedModules[0];
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const switcherRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部或按 Esc 关闭插件切换器
+  useEffect(() => {
+    if (!switcherOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!switcherRef.current?.contains(e.target as Node)) {
+        setSwitcherOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSwitcherOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [switcherOpen]);
 
   // 第 1 页主行动为登录，第 2 页为启动插件
   const primary = page === 1
@@ -111,20 +130,79 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
           )}
         </button>
 
-        {/* 亮暗切换 */}
-        <button
-          type="button"
-          onClick={toggleMode}
-          title={mode === 'dark' ? '切换到亮色模式' : '切换到暗色模式'}
-          aria-label="切换亮暗模式"
-          className="flex size-8 items-center justify-center rounded-md text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
-        >
-          {mode === 'dark' ? (
-            <Sun className="size-4" />
-          ) : (
-            <Moon className="size-4" />
-          )}
-        </button>
+        {/* 插件切换器：点击展开可切换已安装插件 */}
+        {page === 2 && (
+          <div className="relative" ref={switcherRef}>
+            <button
+              type="button"
+              onClick={() => setSwitcherOpen((v) => !v)}
+              title="展开插件列表"
+              aria-label="展开插件列表"
+              aria-expanded={switcherOpen}
+              className="flex size-8 items-center justify-center rounded-md text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
+            >
+              <Boxes className="size-4" />
+            </button>
+
+            <AnimatePresence>
+              {switcherOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                  transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                  className="zj-card absolute right-0 bottom-10 z-50 w-60 overflow-hidden p-1.5"
+                >
+                  <p className="px-2 py-1.5 text-[10px] text-[var(--zj-muted-fg)]">
+                    已安装 {installedModules.length} 个插件
+                  </p>
+                  {installedModules.length === 0 ? (
+                    <p className="px-2 py-3 text-center text-xs text-[var(--zj-muted-fg)]">
+                      还没有安装插件
+                    </p>
+                  ) : (
+                    <div className="max-h-64 space-y-0.5 overflow-y-auto">
+                      {installedModules.map((m) => (
+                        <button
+                          key={m.manifest.id}
+                          type="button"
+                          onClick={() => {
+                            setSwitcherOpen(false);
+                            openCard(`plugin:${m.manifest.id}`);
+                          }}
+                          className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--zj-muted)]"
+                        >
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded bg-[var(--zj-accent-soft)] text-sm">
+                            {m.manifest.preview ?? '🧩'}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium">
+                              {m.manifest.name}
+                            </span>
+                            <span className="block truncate text-[10px] text-[var(--zj-muted-fg)]">
+                              {m.manifest.category} · v{m.manifest.version}
+                            </span>
+                          </span>
+                          <Play className="size-3 shrink-0 text-[var(--zj-muted-fg)]" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSwitcherOpen(false);
+                      openCard('marketplace');
+                    }}
+                    className="mt-1 w-full rounded-md border-t border-[var(--zj-border)] px-2 py-1.5 text-left text-[11px] text-[var(--zj-accent)] transition-opacity hover:opacity-70"
+                  >
+                    去功能广场安装更多 →
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
         {/* 主行动 */}
         <button
