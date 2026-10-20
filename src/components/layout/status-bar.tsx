@@ -59,7 +59,7 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
-      className="zj-card mx-auto flex w-full max-w-6xl shrink-0 items-center gap-3 px-3 py-2.5 sm:px-4"
+      className="zj-card flex w-full shrink-0 items-center gap-3 px-3 py-2.5 sm:px-4"
     >
       {/* 左侧：头像 + 问候语 */}
       <button

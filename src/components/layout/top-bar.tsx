@@ -30,7 +30,7 @@ export function TopBar({
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-      className="zj-card mx-auto flex w-full max-w-6xl shrink-0 items-center gap-3 px-4 py-3 sm:px-5"
+      className="zj-card flex w-full shrink-0 items-center gap-3 px-4 py-3 sm:px-5"
     >
       {/* 品牌区 */}
       <div className="flex min-w-0 flex-1 items-center gap-3">

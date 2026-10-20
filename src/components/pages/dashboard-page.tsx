@@ -36,7 +36,7 @@ export function DashboardPage({ active }: { active: boolean }) {
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* 顶部导航栏 */}
-      <div className="shrink-0 px-4 pt-4 sm:px-6 sm:pt-5">
+      <div className="shrink-0 px-2 pt-2 sm:px-3 sm:pt-3">
         <TopBar
           title="初来乍到"
           subtitle="欢迎来到智简匣，一切功能都在这里"
