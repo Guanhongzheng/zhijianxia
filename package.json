@@ -15,7 +15,9 @@
     "plugins:verify": "node scripts/verify-plugins.mjs && node scripts/verify-kernel.mjs",
     "plugins:typecheck": "tsc -p scripts/tsconfig.plugins.json --noEmit",
     "server": "node server/src/index.js",
-    "server:init": "node server/src/init-db.js"
+    "server:init": "node server/src/init-db.js",
+    "e2e": "node scripts/zj-e2e.js",
+    "e2e:offline": "node scripts/zj-e2e-offline.js"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
