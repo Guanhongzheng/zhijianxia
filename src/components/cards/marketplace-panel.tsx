@@ -1,0 +1,292 @@
+'use client';
+
+import { useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  Download,
+  Info,
+  Package,
+  Search,
+  Trash2,
+  Upload,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { usePluginStore } from '@/store/plugin-store';
+import { useAppStore } from '@/store/app-store';
+import {
+  MARKETPLACE_ENTRIES,
+  MARKETPLACE_CATEGORIES,
+  type MarketplaceEntry,
+} from '@/plugins';
+
+/** 功能广场：插件市场 */
+export function MarketplacePanel() {
+  const installed = usePluginStore((s) => s.installed);
+  const installing = usePluginStore((s) => s.importing);
+  const install = usePluginStore((s) => s.install);
+  const uninstall = usePluginStore((s) => s.uninstall);
+  const exportPackage = usePluginStore((s) => s.exportPackage);
+  const importPackageFile = usePluginStore((s) => s.importPackageFile);
+  const notify = useAppStore((s) => s.notify);
+
+  const [keyword, setKeyword] = useState('');
+  const [category, setCategory] = useState('all');
+  const [detail, setDetail] = useState<MarketplaceEntry | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const entries = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return MARKETPLACE_ENTRIES.filter((entry) => {
+      const matchCat = category === 'all' || entry.category === category;
+      if (!matchCat) return false;
+      if (!kw) return true;
+      return (
+        entry.name.toLowerCase().includes(kw) ||
+        entry.description.toLowerCase().includes(kw) ||
+        entry.tags.some((t) => t.toLowerCase().includes(kw))
+      );
+    });
+  }, [keyword, category]);
+
+  const handleImport = async (file: File) => {
+    await importPackageFile(file);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 搜索与筛选 */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[var(--zj-muted-fg)]" />
+          <Input
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="搜索插件名称、简介或标签…"
+            className="pl-9"
+          />
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".plugin,application/json"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void handleImport(file);
+          }}
+        />
+        <Button
+          variant="outline"
+          onClick={() => fileRef.current?.click()}
+          disabled={!!installing}
+        >
+          {installing ? (
+            <Skeleton className="size-4" />
+          ) : (
+            <Upload className="size-3.5" />
+          )}
+          导入插件
+        </Button>
+      </div>
+
+      {/* 分类筛选 */}
+      <div className="zj-hide-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        {MARKETPLACE_CATEGORIES.map((cat) => (
+          <button
+            key={cat.id}
+            type="button"
+            onClick={() => setCategory(cat.id)}
+            className={`shrink-0 rounded-md border px-3 py-1.5 text-xs transition-colors ${
+              category === cat.id
+                ? 'border-[var(--zj-accent)] bg-[var(--zj-accent-soft)] text-[var(--zj-fg)]'
+                : 'border-[var(--zj-border)] text-[var(--zj-muted-fg)] hover:bg-[var(--zj-muted)]'
+            }`}
+          >
+            {cat.name}
+          </button>
+        ))}
+      </div>
+
+      {/* 插件列表 */}
+      {entries.length === 0 ? (
+        <div className="zj-card flex flex-col items-center gap-2 px-5 py-10 text-center">
+          <Package className="size-5 text-[var(--zj-muted-fg)]" />
+          <p className="text-sm text-[var(--zj-muted-fg)]">
+            没有找到匹配的插件
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {entries.map((entry, idx) => {
+            const isInstalled = installed.includes(entry.id);
+            return (
+              <motion.article
+                key={entry.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.2,
+                  delay: Math.min(idx * 0.03, 0.2),
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                className="zj-card flex flex-col gap-2.5 p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--zj-accent-soft)] text-xl">
+                    {entry.preview}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h4 className="truncate text-sm font-medium">{entry.name}</h4>
+                      {entry.builtin && (
+                        <Badge variant="outline" className="shrink-0 text-[10px]">
+                          预装
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-[var(--zj-muted-fg)]">
+                      v{entry.version} · {entry.category} · {entry.sizeKB} KB
+                    </p>
+                  </div>
+                </div>
+
+                <p className="line-clamp-2 text-xs leading-relaxed text-[var(--zj-muted-fg)]">
+                  {entry.description}
+                </p>
+
+                <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setDetail(entry)}
+                  >
+                    <Info className="size-3" />
+                    详情
+                  </Button>
+
+                  <div className="flex items-center gap-1.5">
+                    {isInstalled && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => void exportPackage(entry.id)}
+                          title="导出插件包"
+                        >
+                          <Upload className="size-3 rotate-180" />
+                          导出
+                        </Button>
+                        {!entry.builtin && (
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            className="text-red-500 hover:bg-red-500/10"
+                            onClick={() => void uninstall(entry.id)}
+                          >
+                            <Trash2 className="size-3" />
+                            卸载
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {!isInstalled && (
+                      <Button
+                        size="xs"
+                        onClick={() => void install(entry.id)}
+                      >
+                        <Download className="size-3" />
+                        安装
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </motion.article>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 插件详情弹窗 */}
+      <Dialog open={detail !== null} onOpenChange={(o) => !o && setDetail(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-xl">{detail?.preview}</span>
+              {detail?.name}
+            </DialogTitle>
+            <DialogDescription>{detail?.description}</DialogDescription>
+          </DialogHeader>
+
+          {detail && (
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <InfoRow label="版本" value={`v${detail.version}`} />
+                <InfoRow label="分类" value={detail.category} />
+                <InfoRow label="作者" value={detail.author} />
+                <InfoRow label="体积" value={`${detail.sizeKB} KB`} />
+                <InfoRow
+                  label="依赖后端"
+                  value={detail.offline ? '否（纯本地）' : '是'}
+                />
+                <InfoRow label="内核要求" value={`≥ ${detail.minCoreVersion}`} />
+              </div>
+
+              {detail.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {detail.tags.map((t) => (
+                    <Badge key={t} variant="outline">
+                      {t}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-md border border-[var(--zj-border)] p-3 text-[11px] leading-relaxed text-[var(--zj-muted-fg)]">
+                插件与内核完全解耦，可独立打包导出为 .plugin 文件分享给他人导入使用。
+                导入时会校验版本与内核兼容性，不兼容的插件将被拒绝加载。
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetail(null)}>
+              关闭
+            </Button>
+            {detail && !installed.includes(detail.id) && (
+              <Button
+                onClick={async () => {
+                  await install(detail.id);
+                  setDetail(null);
+                }}
+              >
+                <Download className="size-3.5" />
+                立即安装
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[var(--zj-border)] px-2.5 py-2">
+      <p className="text-[10px] text-[var(--zj-muted-fg)]">{label}</p>
+      <p className="mt-0.5 text-xs">{value}</p>
+    </div>
+  );
+}
