@@ -15,6 +15,7 @@ import { useThemeStore, readThemeSnapshot } from './theme-store';
 import { aiChat } from '@/lib/ai/scheduler';
 import { getLocalAiState } from '@/lib/ai/local-engine';
 import { idbGet, idbSet } from '@/lib/storage/idb';
+import { readLocal } from '@/lib/utils';
 
 const INSTALLED_KEY = 'zj-plugin-installed';
 
@@ -37,6 +38,12 @@ interface PluginStoreState {
   boot: () => Promise<void>;
   install: (id: string) => Promise<void>;
   uninstall: (id: string) => Promise<void>;
+  /** 从后端仓库下载插件包并缓存到本地（下载后方可离线使用） */
+  downloadFromRegistry: (id: string) => Promise<void>;
+  /** 上传已安装插件的包到后端仓库（管理员） */
+  uploadToRegistry: (id: string) => Promise<void>;
+  /** 正在下载的插件 id */
+  downloading: string | null;
   importPackageFile: (file: File) => Promise<void>;
   exportPackage: (id: string) => Promise<void>;
   isInstalled: (id: string) => boolean;
@@ -97,6 +104,7 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
   kernel: null,
   modules: [],
   installed: [],
+  downloading: null,
   booted: false,
   loading: true,
   importing: null,
@@ -172,6 +180,98 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
       useAppStore.getState().notify('插件已安装', 'success');
     } catch (err) {
       const msg = err instanceof Error ? err.message : '插件安装失败';
+      set({ error: msg });
+      useAppStore.getState().notify(msg, 'error');
+    }
+  },
+
+  /**
+   * 从后端仓库下载插件包。
+   *
+   * 流程：后端取包 → 校验兼容性 → 缓存到 IndexedDB → 注册启用。
+   * 缓存后即使后端离线，该插件仍可继续使用。
+   */
+  downloadFromRegistry: async (id) => {
+    const { kernel } = get();
+    if (!kernel) return;
+    const { lan } = useAppStore.getState();
+    const token = readLocal<string | null>('zj-token', null);
+    if (!token) {
+      useAppStore.getState().notify('请先登录后再下载插件', 'error');
+      return;
+    }
+
+    set({ downloading: id, error: null });
+    try {
+      const { fetchRegistryPlugin } = await import('@/lib/backend/registry');
+      const { cachePluginPackage } = await import('@/lib/registry-cache');
+
+      const pkg = await fetchRegistryPlugin(lan, token, id);
+
+      // 缓存到本地（供离线使用）
+      await cachePluginPackage(id, pkg);
+
+      // 走内核的包导入流程，校验版本与兼容性
+      const result = await kernel.importPackage(JSON.stringify(pkg));
+      if (!result.ok) {
+        set({ error: result.error, downloading: null });
+        useAppStore.getState().notify(result.error, 'error');
+        return;
+      }
+
+      const module = result.value;
+      kernel.registry.register(module, { replace: true, installed: true });
+      if (module.onInstall) {
+        await module.onInstall(kernel.createContext(module.manifest.id));
+      }
+
+      const installed = kernel.registry.listInstalled().map((m) => m.manifest.id);
+      set({
+        modules: kernel.registry.list(),
+        installed,
+        downloading: null,
+        error: null,
+      });
+      await idbSet(INSTALLED_KEY, installed);
+      useAppStore
+        .getState()
+        .notify(`插件「${module.manifest.name}」已下载，可在离线状态下使用`, 'success');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '插件下载失败';
+      set({ error: msg, downloading: null });
+      useAppStore.getState().notify(msg, 'error');
+    }
+  },
+
+  /** 上传已安装插件的包到后端仓库（管理员） */
+  uploadToRegistry: async (id) => {
+    const { lan } = useAppStore.getState();
+    const token = readLocal<string | null>('zj-token', null);
+    if (!token) {
+      useAppStore.getState().notify('请先登录后再上传插件', 'error');
+      return;
+    }
+    try {
+      const { uploadRegistryPlugin } = await import('@/lib/backend/registry');
+      const { readCachedPluginPackage } = await import('@/lib/registry-cache');
+      const { createPluginPackage } = await import('@/plugins/packager');
+
+      const module = get().modules.find((m) => m.manifest.id === id);
+      if (!module) {
+        useAppStore.getState().notify('插件不存在，无法上传', 'error');
+        return;
+      }
+
+      // 优先上传本地缓存的原始包，保持与下载源一致
+      const cached = await readCachedPluginPackage(id);
+      const pkg = cached ?? createPluginPackage(module.manifest);
+
+      await uploadRegistryPlugin(lan, token, pkg);
+      useAppStore
+        .getState()
+        .notify(`插件「${module.manifest.name}」已上传到广场`, 'success');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '插件上传失败';
       set({ error: msg });
       useAppStore.getState().notify(msg, 'error');
     }

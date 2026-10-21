@@ -229,18 +229,35 @@ function log(ok, name, extra = '') {
       '广场关键词搜索生效',
     );
 
-    // ---------- 8. 安装插件 ----------
-    const installBtn = await page.$('[role="dialog"] button:has-text("安装"):not(:has-text("导入"))');
-    if (installBtn) {
-      await installBtn.click();
-      await page.waitForTimeout(1500);
+    // ---------- 8. 获取插件 ----------
+    // 仓库里的插件走「下载」（下载后缓存到本地，可离线使用）；
+    // 随应用打包的插件走「安装」。两者都应使插件进入已安装状态。
+    const actionBtn = await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const btns = Array.from(dlg.querySelectorAll('button'));
+      const install = btns.find(
+        (x) => x.textContent.trim() === '安装',
+      );
+      if (install) {
+        install.click();
+        return '安装';
+      }
+      const download = btns.find((x) => x.textContent.trim() === '下载');
+      if (download) {
+        download.click();
+        return '下载';
+      }
+      return null;
+    });
+    if (actionBtn) {
+      await page.waitForTimeout(2500);
       const after = await page.textContent('[role="dialog"]');
       log(
         (after ?? '').includes('卸载') || (after ?? '').includes('导出'),
-        '插件一键安装成功（出现卸载/导出按钮）',
+        `插件一键${actionBtn}成功（出现卸载/导出按钮）`,
       );
     } else {
-      log(false, '找到安装按钮');
+      log(false, '找到安装或下载按钮');
     }
 
     await page.keyboard.press('Escape');
@@ -568,6 +585,98 @@ function log(ok, name, extra = '') {
         (visionPanel ?? '').includes('Google Gemini API') &&
         (visionPanel ?? '').includes('通义千问VL'),
       '多模态模型分类含 Claude / Gemini / 通义千问VL 服务商',
+    );
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+
+    // ---------- 9.9 仓库与主题包 ----------
+
+    // 设置面板：切换左侧导航时高度保持稳定
+    await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      );
+      const t = cards.find(
+        (c) => c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
+          '系统设置',
+      );
+      if (t) t.click();
+    });
+    await page.waitForTimeout(1500);
+
+    const dialogHeights = [];
+    for (const sec of ['个性化', 'AI 引擎', '局域网', 'API', '通用', '关于']) {
+      await page.evaluate((s) => {
+        const nav = document.querySelector('[role="dialog"] nav');
+        const btn = Array.from(nav.querySelectorAll('button')).find(
+          (x) => x.textContent.trim() === s,
+        );
+        if (btn) btn.click();
+      }, sec);
+      await page.waitForTimeout(800);
+      dialogHeights.push(
+        await page.evaluate(() =>
+          Math.round(
+            document.querySelector('[role="dialog"]').getBoundingClientRect().height,
+          ),
+        ),
+      );
+    }
+    log(
+      new Set(dialogHeights).size === 1,
+      '设置面板切换左侧导航时高度保持稳定',
+      dialogHeights.join(','),
+    );
+
+    // 个性化：主色调已移除，主题包可导入
+    await page.evaluate(() => {
+      const nav = document.querySelector('[role="dialog"] nav');
+      const btn = Array.from(nav.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === '个性化',
+      );
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(1500);
+
+    const personalizationText = await page.textContent('[role="dialog"]');
+    log(
+      !(personalizationText ?? '').includes('主色调'),
+      '个性化已移除「主色调」设置项',
+    );
+    log(
+      (personalizationText ?? '').includes('导入 .theme'),
+      '个性化提供 .theme 主题包导入入口',
+    );
+    log(
+      (personalizationText ?? '').includes('广场主题包'),
+      '个性化提供广场主题包区域',
+    );
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+
+    // 功能广场：仓库插件走「下载」，已下载显示「可离线」
+    await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      );
+      const t = cards.find(
+        (c) => c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
+          '功能广场',
+      );
+      if (t) t.click();
+    });
+    await page.waitForTimeout(2500);
+
+    const market = await page.textContent('[role="dialog"]');
+    log(
+      (market ?? '').includes('下载') || (market ?? '').includes('安装'),
+      '功能广场提供插件获取入口（下载/安装）',
+    );
+    log(
+      (market ?? '').includes('可离线'),
+      '已下载的插件在广场标记为「可离线」',
     );
 
     await page.keyboard.press('Escape');

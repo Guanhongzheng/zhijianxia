@@ -63,7 +63,7 @@ export function SettingsPanel() {
   const [section, setSection] = useState<SectionId>('profile');
 
   return (
-    <div className="flex max-h-[72dvh] gap-4">
+    <div className="flex h-[62dvh] gap-4">
       {/* 左侧导航 */}
       <nav className="w-36 shrink-0 space-y-1 overflow-y-auto pr-1 sm:w-40">
         {SETTINGS_SECTIONS.map((item) => {
@@ -92,7 +92,7 @@ export function SettingsPanel() {
         })}
       </nav>
 
-      {/* 右侧内容 */}
+      {/* 右侧内容 —— 固定高度，切换导航时布局不跳动 */}
       <div className="min-w-0 flex-1 overflow-y-auto pr-1">
         {section === 'profile' && <ProfileSettings />}
         {section === 'personalization' && <PersonalizationSettings />}

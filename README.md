@@ -51,6 +51,63 @@
 - **界面大小**：小 / 中 / 大三档，通过根字号 + Tailwind 字号变量整体缩放，选择后立即生效并持久化
 - 全部颜色由 CSS 变量驱动，主题包切换时整套界面同步换色
 
+### 插件包与主题包仓库
+
+插件包与主题包统一存放在**后端 SQLite**（`plugin_packages` / `theme_packages` 表），
+局域网内任意设备都能浏览、下载、分享。
+
+| 层 | 位置 | 作用 |
+|----|------|------|
+| **仓库** | 后端 SQLite | 权威来源，存放包本体与元数据 |
+| **本地缓存** | IndexedDB / LocalStorage | 每台设备下载后的副本，**离线可用** |
+
+**插件包（`.plugin`）与主题包（`.theme`）都是打包文件**，采用同款「信封 + 载荷」结构：
+
+```jsonc
+// .theme 示例（.plugin 结构相同，只是载荷段不同）
+{
+  "format": "zhijianxia.theme",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "my-theme",
+    "name": "我的主题",
+    "version": "1.0.0",
+    "description": "一套自制的 UI 主题",
+    "author": "设计者",
+    "preview": "🎨",
+    "tags": ["深色"]
+  },
+  "pack": {
+    "light": { "accent": "#4f6bed", "accentSoft": "#eef1fe", "card": "#ffffff",
+               "bg": "#f6f7f9", "fg": "#1c1f24", "mutedFg": "#6b7280",
+               "border": "#e6e8ec", "radius": 16, "shadow": 2 },
+    "dark":  { "...": "同上" },
+    "wallpaper": { "light": { "kind": "gradient", "gradient": "linear-gradient(...)", "veil": 0.9 } }
+  }
+}
+```
+
+> **主题包在外部制作**（设计工具或手工编辑 JSON），
+> 应用内只提供「导入 .theme」「从广场下载」「导出」「上传」，
+> 不提供可视化制作界面。
+
+**仓库 API**（均需登录，写操作需管理员）：
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| GET | `/api/registry/plugins` | 列出插件包 |
+| GET | `/api/registry/plugins/:id` | 下载插件包内容 |
+| POST | `/api/registry/plugins` | 上传/覆盖插件包 |
+| DELETE | `/api/registry/plugins/:id` | 删除插件包 |
+| GET | `/api/registry/themes` | 列出主题包 |
+| GET | `/api/registry/themes/:id` | 下载主题包内容 |
+| POST | `/api/registry/themes` | 上传/覆盖主题包 |
+| DELETE | `/api/registry/themes/:id` | 删除主题包 |
+
+**使用流程**：
+- 插件：广场点「下载」→ 从后端取包 → 校验兼容性 → 缓存到 IndexedDB → 启用，此后离线可用
+- 主题：设置 → 个性化 → 「导入 .theme」或「广场主题包」区点「下载」→ 立即应用
+
 ### API 服务商与能力分类
 
 API 配置按**能力分类**组织，四类能力各自独立选择服务商与模型：
@@ -116,6 +173,8 @@ Key 永不回传前端，接口只返回 `hasKey` 布尔值。
 
 - 全站**扁平卡片风格**：低对比边框、极轻阴影、大量留白，无厚重拟物阴影
 - **本地模型走国内镜像**（hf-mirror.com），可自行选择要下载的模型
+- **插件包与主题包存放于后端仓库**，局域网共享；下载后缓存到本地，可离线使用
+- **主题包为 .theme 打包文件**，在外部制作后导入，或从广场下载
 - **API 按能力分类配置**：文本对话 / 多模态 / 图像生成 / 语音，各自由不同服务商供货
 - **统一骨架屏加载器**：页面初始化、IndexedDB 读取、AI 模型加载、插件解析导入、API 请求、后端连接检测、公告列表加载、好友列表加载、聊天记录加载、主题包加载等全部异步场景复用同一套骨架屏组件，**禁止转圈 loading**
 - **Framer Motion** 全页面交互动效：卡片弹出删除过渡、页面切换动画、弹窗淡入淡出、按钮 hover 微动画
@@ -202,7 +261,7 @@ npm run start     # 启动生产服务
 | `npm run plugins:build` | 打包可下载插件为 `.plugin` 文件 |
 | `npm run plugins:verify` | 插件内核自检（109 + 35 项断言） |
 | `npm run contract` | 前后端接口契约断言（25 项，需后端已启动） |
-| `npm run e2e` | 端到端验证（50 项，需前后端已启动） |
+| `npm run e2e` | 端到端验证（56 项，需前后端已启动） |
 | `npm run e2e:offline` | 后端离线场景验证（8 项） |
 | `npm run e2e:pollution` | 污染数据自动恢复验证（6 项） |
 | `npm run plugins:typecheck` | 插件目录独立类型校验 |
@@ -392,15 +451,17 @@ zhijianxia/
 │   │   │   ├── local-models.ts      # ⭐ 本地模型清单与下载源
 │   │   │   ├── api-providers.ts     # ⭐ API 服务商清单读取器
 │   │   │   └── scheduler.ts         # 统一 AI 调度层
-│   │   ├── ai/
-│   │   │   ├── local-engine.ts     # Transformers.js 本地推理
-│   │   │   └── scheduler.ts        # ⭐ 统一 AI 调度层
 │   │   ├── backend/
 │   │   │   ├── client.ts           # 后端请求封装 + 健康检查
 │   │   │   ├── api.ts              # 全部 API 方法
+│   │   │   ├── registry.ts         # ⭐ 插件包/主题包仓库客户端
 │   │   │   └── socket.ts           # WebSocket 客户端
 │   │   ├── storage/idb.ts          # IndexedDB 封装
-│   │   ├── theme/types.ts          # 主题包定义 + 内置预设
+│   │   ├── theme/
+│   │   │   ├── types.ts            # 主题包类型与内置预设
+│   │   │   ├── packager.ts         # ⭐ .theme 包格式（导入/导出/校验）
+│   │   │   └── density.ts          # 界面密度（小/中/大）
+│   │   ├── registry-cache.ts       # ⭐ 仓库内容的本地缓存（离线可用）
 │   │   └── utils.ts
 │   │
 │   ├── plugins/                    # ⭐ 插件内核

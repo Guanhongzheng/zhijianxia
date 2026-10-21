@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Download,
@@ -24,11 +24,18 @@ import {
 } from '@/components/ui/dialog';
 import { usePluginStore } from '@/store/plugin-store';
 import { useAppStore } from '@/store/app-store';
+import { useAuthStore } from '@/store/auth-store';
 import {
   MARKETPLACE_ENTRIES,
   MARKETPLACE_CATEGORIES,
   type MarketplaceEntry,
 } from '@/plugins';
+import {
+  fetchRegistryPlugins,
+  uploadRegistryPlugin,
+  type RegistryPlugin,
+} from '@/lib/backend/registry';
+import { hasCachedPluginPackage } from '@/lib/registry-cache';
 
 /** 功能广场：插件市场 */
 export function MarketplacePanel() {
@@ -45,9 +52,104 @@ export function MarketplacePanel() {
   const [detail, setDetail] = useState<MarketplaceEntry | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // ---- 后端仓库 ----
+  const backendOnline = useAppStore((s) => s.backendOnline);
+  const lan = useAppStore((s) => s.lan);
+  const token = useAuthStore((s) => s.token);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
+  const downloadFromRegistry = usePluginStore((s) => s.downloadFromRegistry);
+  const uploadToRegistry = usePluginStore((s) => s.uploadToRegistry);
+  const downloading = usePluginStore((s) => s.downloading);
+
+  const [registryPlugins, setRegistryPlugins] = useState<RegistryPlugin[]>([]);
+  const [registryLoading, setRegistryLoading] = useState(false);
+  /** 已缓存到本地（下载过）的插件 id */
+  const [cachedIds, setCachedIds] = useState<string[]>([]);
+
+  /** 拉取后端仓库的插件包列表 */
+  const loadRegistry = useMemo(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!backendOnline || !token) {
+        setRegistryPlugins([]);
+        return;
+      }
+      setRegistryLoading(true);
+      try {
+        const list = await fetchRegistryPlugins(lan, token);
+        if (!cancelled) setRegistryPlugins(list);
+      } catch {
+        if (!cancelled) setRegistryPlugins([]);
+      } finally {
+        if (!cancelled) setRegistryLoading(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [backendOnline, lan, token]);
+
+  useEffect(() => {
+    loadRegistry();
+  }, [loadRegistry]);
+
+  /** 检查哪些插件已缓存到本地（可离线使用） */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const ids = await Promise.all(
+        registryPlugins.map(async (p) =>
+          (await hasCachedPluginPackage(p.id)) ? p.id : null,
+        ),
+      );
+      if (!cancelled) {
+        setCachedIds(ids.filter((x): x is string => x !== null));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [registryPlugins, installed]);
+
+  /** 后端仓库中的插件 id 集合 */
+  const registryIds = useMemo(
+    () => new Set(registryPlugins.map((p) => p.id)),
+    [registryPlugins],
+  );
+
+  /**
+   * 合并本地静态条目与后端仓库条目（按 id 去重，**后端优先**）。
+   * 后端仓库是权威来源：包放在后端后，插件需要先下载才能离线使用，
+   * 因此仓库里的条目一律以「下载」呈现，而不是随应用打包的「安装」。
+   */
+  const allEntries = useMemo(() => {
+    const map = new Map<string, MarketplaceEntry>();
+    for (const e of MARKETPLACE_ENTRIES) map.set(e.id, e);
+    for (const r of registryPlugins) {
+      map.set(r.id, {
+        id: r.id,
+        name: r.name,
+        version: r.version,
+        description: r.description,
+        category: r.category,
+        author: r.author,
+        icon: 'Package',
+        preview: r.preview,
+        tags: r.tags,
+        builtin: r.builtin,
+        offline: r.offline,
+        sizeKB: r.sizeKB,
+        minCoreVersion: r.minCoreVersion,
+        installed: false,
+      });
+    }
+    return Array.from(map.values());
+  }, [registryPlugins]);
+
   const entries = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    return MARKETPLACE_ENTRIES.filter((entry) => {
+    return allEntries.filter((entry) => {
       const matchCat = category === 'all' || entry.category === category;
       if (!matchCat) return false;
       if (!kw) return true;
@@ -57,7 +159,7 @@ export function MarketplacePanel() {
         entry.tags.some((t) => t.toLowerCase().includes(kw))
       );
     });
-  }, [keyword, category]);
+  }, [keyword, category, allEntries]);
 
   const handleImport = async (file: File) => {
     await importPackageFile(file);
@@ -155,6 +257,11 @@ export function MarketplacePanel() {
                           预装
                         </Badge>
                       )}
+                      {cachedIds.includes(entry.id) && (
+                        <Badge variant="success" className="shrink-0 text-[0.6875rem]">
+                          可离线
+                        </Badge>
+                      )}
                     </div>
                     <p className="mt-0.5 text-[0.75rem] text-[var(--zj-muted-fg)]">
                       v{entry.version} · {entry.category} · {entry.sizeKB} KB
@@ -188,6 +295,17 @@ export function MarketplacePanel() {
                           <Upload className="size-3 rotate-180" />
                           导出
                         </Button>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => void uploadToRegistry(entry.id)}
+                            title="上传到局域网广场"
+                          >
+                            <Upload className="size-3" />
+                            上传
+                          </Button>
+                        )}
                         {!entry.builtin && (
                           <Button
                             variant="ghost"
@@ -204,10 +322,25 @@ export function MarketplacePanel() {
                     {!isInstalled && (
                       <Button
                         size="xs"
-                        onClick={() => void install(entry.id)}
+                        disabled={downloading === entry.id}
+                        onClick={() => {
+                          // 仓库里的插件需要先下载（下载后才可离线使用）；
+                          // 随应用打包的插件直接安装即可
+                          if (registryIds.has(entry.id)) {
+                            void downloadFromRegistry(entry.id).then(() => {
+                              void loadRegistry();
+                            });
+                          } else {
+                            void install(entry.id);
+                          }
+                        }}
                       >
                         <Download className="size-3" />
-                        安装
+                        {downloading === entry.id
+                          ? '下载中…'
+                          : registryIds.has(entry.id)
+                            ? '下载'
+                            : '安装'}
                       </Button>
                     )}
                   </div>

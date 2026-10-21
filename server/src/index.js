@@ -25,6 +25,7 @@ const friendRoutes = require('./routes/friends');
 const groupRoutes = require('./routes/groups');
 const messageRoutes = require('./routes/messages');
 const aiRoutes = require('./routes/ai-proxy');
+const registryRoutes = require('./routes/registry');
 
 const PORT = Number(process.env.PORT) || 8787;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -55,6 +56,7 @@ app.use('/api/friends', friendRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/registry', registryRoutes);
 
 // 未匹配的接口
 app.use('/api', (req, res) => {
