@@ -15,6 +15,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { ensureBackend } from '@/components/modals/backend-gate';
 import { AnnouncementsCard } from '@/components/cards/announcements-card';
 import { MarketplaceCard } from '@/components/cards/marketplace-card';
+import { InstalledPluginsCard } from '@/components/cards/installed-plugins-card';
 import { TopBar } from '@/components/layout/top-bar';
 
 /**
@@ -71,6 +72,11 @@ export function DashboardPage({ active }: { active: boolean }) {
 
         {/* 功能广场卡片（原启动插件位置） */}
         <MarketplaceCard />
+
+        {/* 我的插件：点击即全屏启动 */}
+        <div className="lg:col-span-2">
+          <InstalledPluginsCard />
+        </div>
 
         {/* 好友卡片 */}
         <EntryCard

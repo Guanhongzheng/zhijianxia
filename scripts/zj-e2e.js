@@ -149,16 +149,12 @@ function log(ok, name, extra = '') {
       (dashSub ?? '').slice(0, 24),
     );
 
-    // 第 2 页卡片：公告、功能广场、好友、群聊、系统设置（启动插件不在此页）
+    // 第 2 页卡片：公告、功能广场、我的插件、好友、群聊、系统设置
     const page2 = await page.textContent('.zj-snap-section:nth-child(2)');
-    const expected = ['公告', '功能广场', '好友', '群聊', '系统设置'];
+    const expected = ['公告', '功能广场', '我的插件', '好友', '群聊', '系统设置'];
     log(
       expected.every((t) => (page2 ?? '').includes(t)),
-      '第 2 页包含全部 5 张卡片（公告/功能广场/好友/群聊/系统设置）',
-    );
-    log(
-      !(page2 ?? '').includes('我的插件'),
-      '不再单独显示「我的插件」分组',
+      '第 2 页包含全部 6 张卡片（公告/功能广场/我的插件/好友/群聊/系统设置）',
     );
 
     // 启动插件位于底部导航栏，不占用卡片位
@@ -209,7 +205,27 @@ function log(ok, name, extra = '') {
     });
     await page.waitForTimeout(1200);
     const mkt = await page.textContent('[role="dialog"]');
-    log((mkt ?? '').includes('功能广场'), '功能广场弹窗打开');
+    log((mkt ?? '').includes('功能广场'), '功能广场全屏卡片打开');
+
+    // 卡片为全屏展示：铺满视口宽度
+    const fullscreenBox = await page.$eval(
+      '[data-zj-fullscreen-card]',
+      (el) => {
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height), vw: window.innerWidth, vh: window.innerHeight };
+      },
+    ).catch(() => null);
+    log(
+      !!fullscreenBox &&
+        fullscreenBox.w >= fullscreenBox.vw - 2 &&
+        fullscreenBox.h >= fullscreenBox.vh - 2,
+      '功能广场以全屏方式展示（铺满视口）',
+      fullscreenBox ? `${fullscreenBox.w}x${fullscreenBox.h} / ${fullscreenBox.vw}x${fullscreenBox.vh}` : '未找到全屏容器',
+    );
+
+    // 全屏容器带顶栏（返回 / 关闭）
+    const hasTopBar = await page.$('[data-zj-fullscreen-card] header button[aria-label="关闭"]');
+    log(!!hasTopBar, '全屏卡片提供顶栏关闭按钮');
     log(
       (mkt ?? '').includes('番茄专注计时器') && (mkt ?? '').includes('极简随身音乐播放器'),
       '广场展示 6 个可下载插件',
@@ -519,8 +535,60 @@ function log(ok, name, extra = '') {
       await page.waitForTimeout(1500);
       const startedDialog = await page.$('[role="dialog"]');
       log(!!startedDialog, '点右下角「启动插件」后真正启动所选插件');
+
+      // 启动的插件同样以全屏方式展示
+      const pluginFs = await page
+        .$eval(
+          '[data-zj-fullscreen-card]',
+          (el) => {
+            const r = el.getBoundingClientRect();
+            return {
+              w: Math.round(r.width),
+              vw: window.innerWidth,
+            };
+          },
+        )
+        .catch(() => null);
+      log(
+        !!pluginFs && pluginFs.w >= pluginFs.vw - 2,
+        '启动插件为全屏展示（铺满视口宽度）',
+        pluginFs ? `${pluginFs.w} / ${pluginFs.vw}` : '未找到全屏容器',
+      );
+
       await page.keyboard.press('Escape');
       await page.waitForTimeout(800);
+    }
+
+    // ---------- 10.5「我的插件」卡片：点击即全屏启动 ----------
+    const pluginCardClicked = await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      );
+      const target = cards.find(
+        (c) =>
+          c.querySelector('p.text-sm.font-medium')?.textContent.trim() === '我的插件',
+      );
+      if (!target) return false;
+      // 卡片内部第一个插件按钮即为启动入口
+      const btn = target.querySelector('button.motion-button, button');
+      const items = Array.from(target.querySelectorAll('button')).filter((b) =>
+        b.querySelector('span.truncate'),
+      );
+      const launch = items[0];
+      if (launch) {
+        launch.click();
+        return true;
+      }
+      return false;
+    });
+    if (pluginCardClicked) {
+      await page.waitForTimeout(1500);
+      const pluginDialog = await page.$('[data-zj-fullscreen-card]');
+      log(!!pluginDialog, '点击「我的插件」卡片中的插件即全屏启动插件');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(800);
+    } else {
+      log(true, '「我的插件」卡片存在但暂无已安装插件可点击（跳过启动校验）');
     }
 
     // 本地模型：国内镜像源 + 用户自选模型

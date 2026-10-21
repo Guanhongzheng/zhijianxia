@@ -10,8 +10,10 @@ import {
   findModelOption,
   findModelSource,
   inferFamily,
+  MODEL_SOURCES,
   type ModelFamily,
   type ModelSourceId,
+  type ModelSourceOption,
 } from './local-models';
 
 export {
@@ -105,8 +107,51 @@ export function isLocalAiReady(): boolean {
 }
 
 /**
+ * 提取可读的错误描述。
+ * Transformers.js 的报错信息往往藏在 cause 里，
+ * 这里把 message / cause / status 一并展开，便于界面提示与控制台排查。
+ */
+export function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return '本地模型加载失败';
+
+  const parts: string[] = [err.message];
+
+  // 逐层展开 cause（Transformers.js 会把 fetch 失败包在 cause 中）
+  let cause: unknown = (err as { cause?: unknown }).cause;
+  let depth = 0;
+  while (cause && depth < 5) {
+    if (cause instanceof Error) {
+      parts.push(cause.message);
+      const anyCause = cause as unknown as {
+        cause?: unknown;
+        status?: number;
+        statusText?: string;
+      };
+      if (typeof anyCause.status === 'number') {
+        parts.push(`HTTP ${anyCause.status}`);
+      }
+      cause = anyCause.cause;
+    } else if (typeof cause === 'string') {
+      parts.push(cause);
+      cause = undefined;
+    } else {
+      cause = undefined;
+    }
+    depth += 1;
+  }
+
+  return Array.from(new Set(parts.filter(Boolean))).join(' | ');
+}
+
+/**
  * 加载本地模型。重复调用会复用同一个 Promise。
  * 加载期间会持续推送进度，用于渲染骨架屏。
+ *
+ * 容错策略（针对「模型加载失败」这一常见问题）：
+ * 1. **缓存清理** —— 浏览器 Cache API 里可能残留上次下载中断的半截文件，
+ *    命中坏缓存会导致每次都失败。加载前先清掉该模型在 transformers-cache 中的条目。
+ * 2. **源自动回退** —— 当前源失败时自动改用备用源重试一次，
+ *    避免用户只能看到一句无用的「加载失败」。
  */
 export async function loadLocalModel(
   modelId: string = DEFAULT_LOCAL_MODEL,
@@ -115,63 +160,117 @@ export async function loadLocalModel(
   if (pipelinePromise && loadedModelId === modelId) return pipelinePromise;
 
   loadedModelId = modelId;
+  const primary = findModelSource(readModelSource());
   emit({
     status: 'loading',
     progress: 0,
     modelId,
-    sourceId: readModelSource(),
+    sourceId: primary.id,
     error: undefined,
   });
 
+  const attempt = async (source: ModelSourceOption) => {
+    const { pipeline, env } = await import('@huggingface/transformers');
+
+    // 允许跨域加载模型资源
+    env.allowLocalModels = false;
+
+    // 指向国内模型源（默认阿里巴巴魔搭社区），显著提升下载速度。
+    // 魔搭的仓库路径比 HF 多一层 models/，且默认分支叫 master，
+    // 因此 remoteHost 与 remotePathTemplate 需要按源分别设置。
+    env.remoteHost = source.host;
+    env.remotePathTemplate = source.pathTemplate;
+
+    const instance = await pipeline('text-generation', modelId, {
+      dtype: 'q4',
+      revision: source.revision,
+      progress_callback: (p: unknown) => {
+        const info = p as {
+          status?: string;
+          progress?: number;
+          file?: string;
+          loaded?: number;
+          total?: number;
+        };
+        if (info.status === 'progress' && typeof info.progress === 'number') {
+          const ratio = Math.min(1, Math.max(0, info.progress / 100));
+          emit({ progress: ratio });
+          onProgress?.(ratio);
+        } else if (info.status === 'ready' || info.status === 'done') {
+          emit({ progress: 1 });
+          onProgress?.(1);
+        }
+      },
+    });
+    return instance as TextGenerationPipeline;
+  };
+
   pipelinePromise = (async () => {
-    try {
-      const { pipeline, env } = await import('@huggingface/transformers');
+    // 先清掉该模型可能存在的坏缓存
+    await purgeModelCache(modelId);
 
-      // 允许跨域加载模型资源
-      env.allowLocalModels = false;
+    let lastError: unknown;
 
-      // 指向国内模型源（默认阿里巴巴魔搭社区），显著提升下载速度。
-      // 魔搭的仓库路径比 HF 多一层 models/，且默认分支叫 master，
-      // 因此 remoteHost 与 remotePathTemplate 需要按源分别设置。
-      const source = findModelSource(readModelSource());
-      env.remoteHost = source.host;
-      env.remotePathTemplate = source.pathTemplate;
-
-      const instance = await pipeline('text-generation', modelId, {
-        dtype: 'q4',
-        revision: source.revision,
-        progress_callback: (p: unknown) => {
-          const info = p as {
-            status?: string;
-            progress?: number;
-            file?: string;
-            loaded?: number;
-            total?: number;
-          };
-          if (info.status === 'progress' && typeof info.progress === 'number') {
-            const ratio = Math.min(1, Math.max(0, info.progress / 100));
-            emit({ progress: ratio });
-            onProgress?.(ratio);
-          } else if (info.status === 'ready' || info.status === 'done') {
-            emit({ progress: 1 });
-            onProgress?.(1);
-          }
-        },
-      });
-
-      emit({ status: 'ready', progress: 1 });
-      return instance as TextGenerationPipeline;
-    } catch (err) {
-      emit({
-        status: 'error',
-        error: err instanceof Error ? err.message : '本地模型加载失败',
-      });
-      pipelinePromise = null;
-      throw err;
+    // 依次尝试：首选源 → 备用源
+    for (const source of orderedSources(primary)) {
+      try {
+        const instance = await attempt(source);
+        // 实际生效的源可能与首选不同，同步给界面
+        if (source.id !== primary.id) emit({ sourceId: source.id });
+        emit({ status: 'ready', progress: 1 });
+        return instance;
+      } catch (err) {
+        lastError = err;
+        console.error(
+          `[zj-ai] 模型加载失败（源：${source.name}）：`,
+          err,
+        );
+        // 换源前清缓存，避免上一个源留下的坏数据
+        await purgeModelCache(modelId);
+      }
     }
+
+    // 打印完整错误（含 stack 与可能的网络失败 URL），便于定位浏览器端加载失败原因
+    console.error('[zj-ai] 本地模型加载失败:', lastError);
+    emit({
+      status: 'error',
+      error: describeError(lastError),
+    });
+    pipelinePromise = null;
+    throw lastError;
   })();
 
   return pipelinePromise;
+}
+
+/**
+ * 按「首选源 → 其它源」的顺序返回待尝试的模型源。
+ * 只有一个源时原样返回。
+ */
+function orderedSources(primary: ModelSourceOption): ModelSourceOption[] {
+  const rest = MODEL_SOURCES.filter((s) => s.id !== primary.id);
+  return [primary, ...rest];
+}
+
+/**
+ * 清理浏览器 Cache API 中与该模型相关的缓存条目。
+ *
+ * Transformers.js 默认使用名为 `transformers-cache` 的缓存，
+ * 键是完整的远端 URL。下载中断会留下半截响应，
+ * 之后每次加载都会命中坏缓存并失败，因此加载前必须清一次。
+ */
+export async function purgeModelCache(modelId?: string): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window)) return;
+  try {
+    const cache = await window.caches.open('transformers-cache');
+    const keys = await cache.keys();
+    const targets = modelId
+      ? keys.filter((r) => r.url.includes(modelId))
+      : keys;
+    await Promise.all(targets.map((r) => cache.delete(r)));
+  } catch {
+    /* 缓存不可用时忽略 —— 不影响正常下载 */
+  }
 }
 
 /** 卸载模型（释放显存/内存） */

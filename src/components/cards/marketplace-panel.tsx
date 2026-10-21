@@ -267,7 +267,31 @@ function PluginMarketplace() {
       </div>
 
       {/* 插件列表 */}
-      {entries.length === 0 ? (
+      {registryLoading ? (
+        /* 拉取局域网仓库期间：骨架屏 */
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="zj-card flex flex-col gap-2.5 p-4"
+            >
+              <div className="flex items-start gap-3">
+                <Skeleton className="size-10 shrink-0 rounded-xl" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-3.5 w-1/2" />
+                  <Skeleton className="h-2.5 w-2/3" />
+                </div>
+              </div>
+              <Skeleton className="h-2.5 w-full" />
+              <Skeleton className="h-2.5 w-4/5" />
+              <div className="flex justify-end gap-2 pt-1">
+                <Skeleton className="h-6 w-14 rounded-md" />
+                <Skeleton className="h-6 w-16 rounded-md" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : entries.length === 0 ? (
         <div className="zj-card flex flex-col items-center gap-2 px-5 py-10 text-center">
           <Package className="size-5 text-[var(--zj-muted-fg)]" />
           <p className="text-sm text-[var(--zj-muted-fg)]">

@@ -35,6 +35,8 @@ import {
   unloadLocalModel,
   saveModelSource,
   readModelSource,
+  findModelSource,
+  purgeModelCache,
   LOCAL_MODEL_OPTIONS,
   MODEL_SOURCES,
   DEFAULT_LOCAL_MODEL,
@@ -63,9 +65,9 @@ export function SettingsPanel() {
   const [section, setSection] = useState<SectionId>('profile');
 
   return (
-    <div className="flex h-[62dvh] gap-4">
+    <div className="flex flex-col gap-4 md:flex-row md:min-h-[60dvh]">
       {/* 左侧导航 */}
-      <nav className="w-36 shrink-0 space-y-1 overflow-y-auto pr-1 sm:w-40">
+      <nav className="w-full shrink-0 space-y-1 overflow-x-auto pr-1 md:w-40 md:overflow-y-auto md:overflow-x-visible">
         {SETTINGS_SECTIONS.map((item) => {
           const active = section === item.id;
           return (
@@ -92,8 +94,8 @@ export function SettingsPanel() {
         })}
       </nav>
 
-      {/* 右侧内容 —— 固定高度，切换导航时布局不跳动 */}
-      <div className="min-w-0 flex-1 overflow-y-auto pr-1">
+      {/* 右侧内容 —— 全屏下自适应高度 */}
+      <div className="min-w-0 flex-1 md:max-h-[calc(100dvh-9rem)] md:overflow-y-auto md:pr-1">
         {section === 'profile' && <ProfileSettings />}
         {section === 'personalization' && <PersonalizationSettings />}
         {section === 'ai' && <AiEngineSettings />}
@@ -323,8 +325,14 @@ function AiEngineSettings() {
                   }
                   await loadLocalModel(modelId);
                   notify('本地模型已就绪', 'success');
-                } catch {
-                  notify('模型加载失败，请检查网络或更换下载源后重试', 'error');
+                } catch (err) {
+                  // 展示真实失败原因（而非笼统的「加载失败」），
+                  // 便于区分网络问题、源不可达与文件缺失
+                  const reason =
+                    err instanceof Error && err.message
+                      ? err.message
+                      : '未知错误';
+                  notify(`模型加载失败：${reason}`, 'error');
                 } finally {
                   setWarming(false);
                   setAiState(getLocalAiState());
@@ -350,7 +358,51 @@ function AiEngineSettings() {
                 卸载模型
               </Button>
             )}
+
+            {/* 清缓存重试：应对下载中断留下的坏缓存 */}
+            {aiState.status === 'error' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={warming}
+                onClick={async () => {
+                  setWarming(true);
+                  try {
+                    await purgeModelCache();
+                    await unloadLocalModel();
+                    await loadLocalModel(modelId);
+                    notify('已清理缓存并重新加载成功', 'success');
+                  } catch (err) {
+                    const reason =
+                      err instanceof Error && err.message ? err.message : '未知错误';
+                    notify(`仍然失败：${reason}`, 'error');
+                  } finally {
+                    setWarming(false);
+                    setAiState(getLocalAiState());
+                  }
+                }}
+              >
+                <Trash2 className="size-3.5" />
+                清缓存重试
+              </Button>
+            )}
           </div>
+
+          {/* 失败详情：显示真实错误原因与当前生效的源 */}
+          {aiState.status === 'error' && aiState.error && (
+            <div className="space-y-1.5 rounded-md border border-red-500/30 bg-red-500/5 p-3">
+              <p className="text-xs font-medium text-red-600 dark:text-red-400">
+                加载失败原因
+              </p>
+              <p className="text-[0.75rem] leading-relaxed break-all text-[var(--zj-muted-fg)]">
+                {aiState.error}
+              </p>
+              <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
+                当前源：{findModelSource(aiState.sourceId).name} —— 加载失败时会自动改用其它源重试；
+                若仍失败可点「清缓存重试」。
+              </p>
+            </div>
+          )}
         </div>
       </SettingRow>
     </div>

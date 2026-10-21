@@ -21,6 +21,7 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
   const openCard = useAppStore((s) => s.openCard);
   const modules = usePluginStore((s) => s.modules);
   const installed = usePluginStore((s) => s.installed);
+  const kernelLoading = usePluginStore((s) => s.loading);
 
   const installedModules = modules.filter((m) => installed.includes(m.manifest.id));
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -76,10 +77,12 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
           : '功能广场里有更多',
         icon: Play,
         onClick: () => {
+          // 内核尚未启动完成时先不打开，避免进入空白页
+          if (kernelLoading) return;
           if (selectedPlugin) openCard(`plugin:${selectedPlugin.manifest.id}`);
           else openCard('marketplace');
         },
-        disabled: false,
+        disabled: kernelLoading,
       };
 
   const PrimaryIcon = primary.icon;
@@ -243,12 +246,22 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
         >
           <PrimaryIcon className="size-3.5 text-[var(--zj-accent)] transition-colors group-hover:text-[var(--zj-accent-fg)]" />
           <span className="text-left">
-            <span className="block text-xs leading-tight font-medium">
-              {primary.label}
-            </span>
-            <span className="block max-w-[9rem] truncate text-[0.6875rem] leading-tight text-[var(--zj-muted-fg)]">
-              {primary.hint}
-            </span>
+            {kernelLoading && page === 2 ? (
+              /* 内核加载中：骨架屏占位，避免文字闪烁 */
+              <>
+                <span className="zj-skeleton block h-3 w-14 rounded" />
+                <span className="zj-skeleton mt-1 block h-2.5 w-16 rounded" />
+              </>
+            ) : (
+              <>
+                <span className="block text-xs leading-tight font-medium">
+                  {primary.label}
+                </span>
+                <span className="block max-w-[9rem] truncate text-[0.6875rem] leading-tight text-[var(--zj-muted-fg)]">
+                  {primary.hint}
+                </span>
+              </>
+            )}
           </span>
         </button>
       </div>
