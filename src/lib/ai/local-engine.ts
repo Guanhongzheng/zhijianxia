@@ -108,8 +108,13 @@ export function isLocalAiReady(): boolean {
 
 /**
  * 提取可读的错误描述。
+ *
  * Transformers.js 的报错信息往往藏在 cause 里，
  * 这里把 message / cause / status 一并展开，便于界面提示与控制台排查。
+ *
+ * 另外识别两类高频故障并给出**可执行的**修复建议：
+ * - `no available backend found` / `[wasm]` —— 推理引擎的 wasm 没拿到
+ * - 单纯的 `Failed to fetch` —— 模型文件下载失败
  */
 export function describeError(err: unknown): string {
   if (!(err instanceof Error)) return '本地模型加载失败';
@@ -140,7 +145,113 @@ export function describeError(err: unknown): string {
     depth += 1;
   }
 
-  return Array.from(new Set(parts.filter(Boolean))).join(' | ');
+  const text = Array.from(new Set(parts.filter(Boolean))).join(' | ');
+
+  // wasm 加载失败 —— 推理引擎起不来，与模型源无关
+  if (/no available backend|\[wasm\]|wasm/i.test(text)) {
+    return `${text}（推理引擎的 wasm 未能加载，请执行 npm run postinstall 生成本地 wasm）`;
+  }
+
+  // 单纯的 fetch 失败 —— 多半是模型文件没下载下来
+  if (/Failed to fetch/i.test(text) && !/wasm/i.test(text)) {
+    return `${text}（模型文件下载失败，请检查网络或改用其它下载源）`;
+  }
+
+  return text;
+}
+
+/**
+ * 本地 wasm 目录（同源 public/ort/）。
+ * 由 `scripts/copy-ort-wasm.mjs` 在 postinstall / build 时自动填充。
+ */
+const LOCAL_WASM_DIR = '/ort/';
+
+/**
+ * CDN 兜底目录 —— 本地 wasm 缺失时使用。
+ * jsdelivr 在国内常不可达，故排在本地之后，仅作最后兜底。
+ */
+const CDN_WASM_DIR =
+  'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/';
+
+/** 本地 wasm 是否可用（首次调用后缓存结果） */
+let localWasmChecked: boolean | null = null;
+
+/**
+ * 探测本地 public/ort/ 下的 wasm 是否存在。
+ *
+ * 存在则走同源本地加载（推荐，完全不依赖 CDN）；
+ * 不存在则退回 CDN（可能是未执行 postinstall / build）。
+ *
+ * 用 GET + Range 只取首字节，避免 HEAD 被浏览器取消导致误判。
+ */
+async function hasLocalWasm(): Promise<boolean> {
+  if (localWasmChecked !== null) return localWasmChecked;
+  if (typeof window === 'undefined' || !('fetch' in window)) {
+    localWasmChecked = false;
+    return false;
+  }
+  try {
+    const res = await fetch(`${LOCAL_WASM_DIR}ort-wasm-simd-threaded.jsep.wasm`, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+      cache: 'no-store',
+    });
+    // 200 / 206 均表示文件可读
+    localWasmChecked = res.ok || res.status === 206;
+  } catch {
+    localWasmChecked = false;
+  }
+  return localWasmChecked;
+}
+
+/**
+ * 把 ONNX Runtime 的 wasm 资源指向本地 public/ort/。
+ *
+ * 背景：Transformers.js 在模块初始化时会把
+ * `onnxruntime-web` 的 wasmPaths 设成 `https://cdn.jsdelivr.net/npm/@huggingface/transformers@<ver>/dist/`。
+ * 该域名在国内网络下经常 TLS 握手失败，浏览器侧表现为：
+ *   `no available backend found. ERR: [wasm] TypeError: Failed to fetch`
+ * 进而导致模型永远加载不出来（用户看到的「模型加载失败 · Failed to fetch」）。
+ *
+ * 这里改写 wasmPaths 指向同源的 public/ort/，
+ * 由 `scripts/copy-ort-wasm.mjs` 从 node_modules 复制所需文件，彻底摆脱 CDN 依赖。
+ *
+ * 注意：Transformers.js 会在 import 时就把 wasmPaths 写死，
+ * 所以本函数必须在 `await import('@huggingface/transformers')` **之后**、
+ * `pipeline()` 之前调用（此时 onnxruntime 的 env 仍可改写，
+ * 且 wasmPaths 只在 initWasm() 真正初始化时才被读取）。
+ */
+async function applyLocalWasm(env: {
+  backends?: {
+    onnx?: {
+      wasm?: {
+        wasmPaths?: unknown;
+        wasmBinaryFile?: unknown;
+        numThreads?: unknown;
+      };
+    };
+  };
+}) {
+  const wasm = env.backends?.onnx?.wasm;
+  if (!wasm) return;
+
+  const useLocal = await hasLocalWasm();
+  const dir = useLocal ? LOCAL_WASM_DIR : CDN_WASM_DIR;
+
+  // 目录形式：onnxruntime 会自动拼接 ort-wasm-simd-threaded.jsep.wasm 等文件名
+  wasm.wasmPaths = dir;
+  // 兜底：部分版本使用 wasmBinaryFile 字段
+  wasm.wasmBinaryFile = `${dir}ort-wasm-simd-threaded.jsep.wasm`;
+  // 单线程更稳：多线程需要 SharedArrayBuffer，
+  // 在未开启跨域隔离（COOP/COEP）的环境下会直接失败
+  wasm.numThreads = 1;
+
+  if (!useLocal) {
+    console.warn(
+      '[zj-ai] 本地 wasm 未找到，已回退到 CDN（该 CDN 在国内可能不可达）。' +
+        '请执行 `npm run postinstall` 或 `npm run build` 生成 public/ort/。',
+    );
+  }
 }
 
 /**
@@ -148,9 +259,10 @@ export function describeError(err: unknown): string {
  * 加载期间会持续推送进度，用于渲染骨架屏。
  *
  * 容错策略（针对「模型加载失败」这一常见问题）：
- * 1. **缓存清理** —— 浏览器 Cache API 里可能残留上次下载中断的半截文件，
- *    命中坏缓存会导致每次都失败。加载前先清掉该模型在 transformers-cache 中的条目。
- * 2. **源自动回退** —— 当前源失败时自动改用备用源重试一次，
+ * 1. **wasm 本地化** —— 绕开 jsdelivr CDN，避免 `Failed to fetch`；
+ * 2. **缓存清理** —— 浏览器 Cache API 里可能残留上次下载中断的半截文件，
+ *    命中坏缓存会导致每次都失败。加载前先清掉该模型在 transformers-cache 中的条目；
+ * 3. **源自动回退** —— 当前源失败时自动改用备用源重试一次，
  *    避免用户只能看到一句无用的「加载失败」。
  */
 export async function loadLocalModel(
@@ -180,6 +292,13 @@ export async function loadLocalModel(
     // 因此 remoteHost 与 remotePathTemplate 需要按源分别设置。
     env.remoteHost = source.host;
     env.remotePathTemplate = source.pathTemplate;
+
+    // **关键**：把 ONNX Runtime 的 wasm 指向本地 public/ort/。
+    // Transformers.js 默认从 cdn.jsdelivr.net 拉取这 21MB 的 wasm，
+    // 该域名在国内常因 TLS 握手失败而报 `Failed to fetch`，
+    // 表现为「no available backend found」，模型永远加载不了。
+    // 改用同源本地文件后彻底摆脱 CDN 依赖。
+    await applyLocalWasm(env);
 
     const instance = await pipeline('text-generation', modelId, {
       dtype: 'q4',

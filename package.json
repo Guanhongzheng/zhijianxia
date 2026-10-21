@@ -7,8 +7,9 @@
     "node": ">=22.5.0"
   },
   "scripts": {
+    "postinstall": "node scripts/copy-ort-wasm.mjs",
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/copy-ort-wasm.mjs && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "plugins:build": "node scripts/build-plugins.mjs",

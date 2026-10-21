@@ -171,6 +171,16 @@ Key 永不回传前端，接口只返回 `hasKey` 布尔值。
 - 切换模型时会先卸载旧模型释放内存，再按新模型重新下载
 - 不同模型族使用各自的聊天模板（`src/lib/ai/local-engine.ts` 的 `applyChatTemplate`），
   换模型后提示词格式自动匹配，不会出现「模型看不懂提示词」
+- **推理引擎 wasm 已本地化**：ONNX Runtime Web 的运行时（`ort-wasm-simd-threaded.jsep.wasm`，约 21MB）
+  默认从 `cdn.jsdelivr.net` 拉取，而该域名在国内 TLS 握手会失败，表现为
+  `no available backend found. ERR: [wasm] TypeError: Failed to fetch`——
+  注意这是**推理引擎起不来**，与模型源本身无关。因此 `scripts/copy-ort-wasm.mjs`
+  会在 `postinstall` 与 `build` 时自动把 wasm 复制到 `public/ort/`，
+  运行时探测到本地副本后改写 `wasmPaths` 指向同源 `/ort/`，彻底不依赖境外 CDN。
+  失败时若本地副本缺失会打印告警并降级回 CDN，同时设置面板会展示逐层展开的真实报错原因
+  （`describeError`），可点「清缓存重试」清掉浏览器 Cache API 里的坏缓存后重试
+- **三重容错**：加载前先清 `transformers-cache`；某个源失败会自动 purge 缓存并按序回退到其它源重试；
+  全部失败才报错。避免一次网络抖动导致后续每次都失败
 
 ### 主题包系统
 
@@ -558,7 +568,8 @@ zhijianxia/
 │       └── ws/hub.js               # WebSocket 连接管理
 │
 ├── scripts/
-│   ├── build-plugins.mjs           # 插件打包 → dist-plugins/
+│   ├── build-plugins.mjs           # 插件打包→ dist-plugins/
+│   ├── copy-ort-wasm.mjs           # ONNX wasm → public/ort/（postinstall/build 自动执行）
 │   ├── verify-plugins.mjs          # 插件自检
 │   └── verify-kernel.mjs
 │
