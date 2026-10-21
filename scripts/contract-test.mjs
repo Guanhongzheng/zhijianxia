@@ -300,32 +300,58 @@ async function req(path, { method = 'GET', body, token } = {}) {
     'device + dtype 已接线'
   );
 
-  // WebGPU 上不能用 fp16：会加载完整半精度权重（体积数倍于 q4），
-  // 且部分算子在 WebGPU EP 上不受支持，表现为抛出无法解读的裸数字
+  // WebGPU 上不能用 fp16（会加载完整半精度权重，体积数倍于 q4）。
+  //
+  // ⚠️ 这里曾断言「WebGPU→ q4f16」，那是**错误的假设**，已被实测推翻：
+  // 同一份 493MB Qwen1.5-0.5B 权重，在同一台机器（NVIDIA Lovelace、
+  // shader-f16 可用、适配器与 device 均正常）上对照测试：
+  //   q4f16 + WebGPU → 必失败（抛裸数字 130907384 / 999335224 / 1003122552）
+  //   q4    + WebGPU → 61s 加载成功，51 个输入全在 GPU
+  //   q4f16 + WASM   → 38s 加载成功
+  // 结论：失败的是 q4f16 这条精度路径与 WebGPU EP 的兼容性，
+  // 与显卡、驱动、权重都无关。因此 WebGPU 现在默认走 q4。
   const rtSrc2 = readFileSync(
     new URL('../src/lib/ai/runtime.ts', import.meta.url),
     'utf8'
   );
   const assignsFp16 = /dtype\s*=\s*'fp16'/.test(rtSrc2);
   check(
-    !assignsFp16 && /dtype = webgpuUsable \? 'q4f16' : 'q4'/.test(rtSrc2),
-    'WebGPU 运行时使用 q4f16 而非 fp16',
-    assignsFp16 ? '仍存在 dtype=fp16 赋值' : 'WebGPU→q4f16，WASM→q4'
+    !assignsFp16 && !/webgpuUsable \? 'q4f16'/.test(rtSrc2),
+    'WebGPU 运行时不再选择 q4f16（实测该精度在 WebGPU EP 上必定失败）',
+    assignsFp16 ? '仍存在 dtype=fp16 赋值' : 'WebGPU 与 WASM 统一走 q4'
   );
 
-  // 降级阶梯：WebGPU(q4f16) → WebGPU(q4) → WASM(q4)
+  // 降级阶梯：WebGPU(q4) → WASM(q4)。
+  // 精度维度已收敛为 q4，因此不再需要「GPU 内部换精度」这一档 ——
+  // 那正是旧实现每次失败后重复下载 493MB 权重的根源。
   check(
-    /dtype: 'q4',\s*\n\s*fallbackReason: 'q4f16 初始化失败/.test(engineSrc),
-    'WebGPU 内部保留 q4 降级档（部分显卡 fp16 算子不全）',
-    '降级阶梯含 GPU 内 q4 档'
+    /device: 'wasm' as RuntimeDevice/.test(engineSrc) &&
+      !/fallbackReason: 'q4f16 初始化失败/.test(engineSrc),
+    '降级阶梯收敛为 WebGPU(q4) → WASM(q4)，不再有GPU 内换精度档',
+    '阶梯仅剩换后端一档'
   );
 
-  // 底层有时抛裸数字/裸对象，describeError 必须如实展开而非丢弃
+  // 底层有时抛裸数字/裸对象，describeError 必须如实展开而非丢弃。
+  // 同时要求**面向用户的文案**不得再把原因归到「显卡驱动 / 远程桌面」—— 那是误判，
+  // 会把用户引去折腾驱动。注释里可以写「这里曾经误判」来记录历史。
+  const userFacingText = [...engineSrc.matchAll(/return\s+`[^`]*`/g)]
+    .map((m) => m[0])
+    .join('\n');
   check(
     /describeNonError/.test(engineSrc) &&
-      /底层抛出了未包装的错误值/.test(engineSrc),
-    'describeError 能处理非 Error 值（裸数字/裸对象）',
-    'describeNonError 已实现'
+      /未包装的错误值/.test(engineSrc) &&
+      !/远程桌面|显卡驱动/.test(userFacingText),
+    'describeError 能处理非 Error 值（裸数字/裸对象），且用户文案不误判为显卡驱动问题',
+    'describeNonError 已实现，用户文案已改为指向精度兼容性'
+  );
+
+  // 加载失败时不得无条件清缓存：权重可达数百 MB，
+  // 无条件清会让用户每次点「加载」都重新下载一遍。
+  check(
+    /isCacheRelatedError/.test(engineSrc) &&
+      /if \(isCacheRelatedError\(err\)\)/.test(engineSrc),
+    '仅在错误与缓存相关时才清模型缓存（避免重复下载数百MB 权重）',
+    '缓存清理已条件化'
   );
 
   // 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session。

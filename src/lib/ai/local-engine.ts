@@ -140,14 +140,22 @@ function describeNonError(err: unknown): string {
   }
 
   if (typeof err === 'number') {
-    // 实测：WebGPU 后端初始化失败时，ONNX Runtime 抛出的就是这个 ——
-    // 一个 wasm 侧未初始化的内存/句柄值（见过 1888206176、999335224 等），
-    // **每次都不一样**，因此它不是错误码，无法据此定位。
-    // 结合「运行时是 webgpu」这一上下文才能给出有意义的判断。
+    // ONNX Runtime 的 WebGPU 执行后端（JSEP）初始化失败时抛出的就是这个 ——
+    // 一个 wasm 侧的未初始化内存值，而不是 Error实例。
+    //
+    // ⚠️ 这里曾经把原因归到「显卡驱动 / 远程桌面 / GPU 独占」，是**误判**。
+    // 实测（NVIDIA Lovelace、shader-f16 可用、适配器与device 均正常）：
+    // 同一个 493MB 权重用 wasm 后端 38 秒加载成功，用 WebGPU 后端必抛裸数字；
+    // 而把精度从 q4f16 换成 q4 后，**WebGPU 也能正常加载**。
+    // 也就是说问题出在 WebGPU 执行后端本身（与q4f16 这条精度路径的兼容性），
+    // 不是用户的硬件或驱动。
+    //
+    // 现在 runtime.ts 已让 WebGPU 默认走 q4，正常不会再走到这里；
+    // 保留这段文案是为了覆盖「显式选择 q4f16 后仍失败」等残余情况。
     return (
-      `底层抛出了未包装的错误值 ${err}（该数值每次都不同，不是可读错误码）。` +
-      `这通常意味着推理后端初始化失败 —— 若当前使用 WebGPU，` +
-      `多半是该环境（驱动版本、远程桌面、GPU 独占或安全策略）无法真正运行 GPU 后端。` +
+      `WebGPU 推理后端初始化失败（底层抛出未包装的错误值 ${err}）。` +
+      `这通常是 ONNX Runtime 的 WebGPU 后端与该模型精度的兼容问题，` +
+      `并非显卡不支持 —— 同一个模型改用 WASM 运行时可以正常加载。` +
       `请在「设置 · AI 引擎」改用 WASM 运行时；若已用 WASM 仍失败，则多为网络或权重下载问题`
     );
   }
@@ -235,9 +243,12 @@ export function describeError(err: unknown): string {
     return `${text}（模型仓库中没有该精度的权重文件；可在「设置 · AI 引擎」改用 WASM 运行时，其使用q4 量化权重）`;
   }
 
-  // WebGPU 侧故障 —— 与模型文件无关，是 GPU/驱动层的问题
+  // WebGPU 侧故障 —— 与模型文件无关。
+  // ⚠️ 不要再说「显卡驱动问题」：实测（NVIDIA Lovelace 等）证明这机器的
+  // WebGPU 完全正常，真正不兼容的是 q4f16 精度与 WebGPU 执行后端。
+  // 归错因会让用户去折腾驱动、白白浪费时间。
   if (/webgpu|navigator\.gpu|GPUAdapter|GPUDevice|requestAdapter|shader|compilation/i.test(text)) {
-    return `${text}（WebGPU 初始化失败，通常是显卡驱动或浏览器策略问题，可在「设置 · AI」中改用 WASM 运行时）`;
+    return `${text}（WebGPU 推理后端初始化失败，多为该模型精度与 WebGPU 后端不兼容 —— 并非显卡不支持；可在「设置 · AI 引擎」改用 WASM 运行时）`;
   }
 
   // wasm 加载失败 —— 推理引擎起不来，与模型源无关
@@ -467,17 +478,21 @@ export async function loadLocalModel(
   };
 
   pipelinePromise = (async () => {
-    // 先清掉该模型可能存在的坏缓存
-    await purgeModelCache(modelId);
+    // ⚠️ 这里**不能**无条件清缓存。
+    //权重大达数百 MB，若每次加载都先删缓存，用户改个设置点一次「加载」
+    // 就要重新下载一遍，实测会反复下载十几分钟。
+    // 坏缓存由下载中断造成，而那种情况在加载时会以
+    // 「protobuf 解析失败 / unexpected end of」等形式报错，
+    // 那时再由 isCacheRelatedError 触发清理即可。
 
     let lastError: unknown;
 
     /**
-     * 降级阶梯：WebGPU(q4f16) → WebGPU(q4) → WASM(q4)。
+     * 降级阶梯：WebGPU(q4) → WASM(q4)。
      *
-     * 为什么要 WebGPU 内部再降一档：部分显卡/驱动上q4f16 所需的
-     * fp16 算子支持不全会初始化失败，但纯 q4 量化反而能跑。
-     * 只做「WebGPU → WASM」一级跳转会白白丢掉 GPU 加速。
+     * 精度维度已收敛：`runtime.ts` 现在 WebGPU 默认就选 q4
+     * （实测 q4f16 在 WebGPU EP 上必定失败，见 RuntimeDtype 的对照实验），
+     * 因此这里不需要再为精度分叉，只保留「换后端」这一个真正有效的方向。
      *
      * 仅当用户没有显式指定 wasm 时才追加 WASM 重试，
      * 否则用户「就想要 wasm」被 GPU 抢占语义会不对。
@@ -485,18 +500,12 @@ export async function loadLocalModel(
     const runtimes: RuntimeInfo[] = (() => {
       if (runtime.device !== 'webgpu') return [runtime];
       const ladder: RuntimeInfo[] = [runtime];
-      // 用户显式锁定 webgpu 时也保留 GPU 内部降级 —— 那是精度调整，不是换设备
-      ladder.push({
-        ...runtime,
-        dtype: 'q4',
-        fallbackReason: 'q4f16 初始化失败，已在 GPU 上改用 q4 量化权重',
-      });
       if (runtime.pref !== 'wasm') {
         ladder.push({
           ...runtime,
           device: 'wasm' as RuntimeDevice,
           dtype: 'q4' as const,
-          fallbackReason: 'WebGPU 初始化失败，已自动回退到 WASM',
+          fallbackReason: 'WebGPU 推理失败，已自动回退到 WASM（CPU 推理，速度略慢但稳定）',
         });
       }
       return ladder;
@@ -505,9 +514,10 @@ export async function loadLocalModel(
     // 外层遍历运行时，内层遍历模型源 —— 任一组合成功即返回
     for (const rt of runtimes) {
       if (rt !== runtime) {
-        // 换了运行时，重置进度并同步给界面
+        // 换了运行时，重置进度并同步给界面。
+        // 注意这里**不**清缓存：换后端（如 WebGPU → WASM）与权重无关，
+        // 保留已下好的文件才能让降级立刻生效，而不是重新下载几百 MB。
         emit({ runtime: rt, progress: 0 });
-        await purgeModelCache(modelId);
       }
 
       for (const source of orderedSources(primary)) {
@@ -528,8 +538,11 @@ export async function loadLocalModel(
             describeError(err),
             err,
           );
-          // 换源前清缓存，避免上一个源留下的坏数据
-          await purgeModelCache(modelId);
+          // 只在错误确实与缓存/网络相关时才清 ——
+          // 否则会把已经完整下载好的 493MB 权重删掉，让下一次重试从头再来。
+          if (isCacheRelatedError(err)) {
+            await purgeModelCache(modelId);
+          }
         }
       }
     }
@@ -562,6 +575,16 @@ function orderedSources(primary: ModelSourceOption): ModelSourceOption[] {
  * Transformers.js 默认使用名为 `transformers-cache` 的缓存，
  * 键是完整的远端 URL。下载中断会留下半截响应，
  * 之后每次加载都会命中坏缓存并失败，因此加载前必须清一次。
+ *
+ * ## ⚠️ 不要再无条件清缓存
+ *
+ * 曾经每次降级重试前都调本函数，结果是：权重已经完整下载成功（HTTP 200），
+ * 但因为后续步骤失败（WebGPU EP 初始化），缓存被清掉，
+ * 于是下一次重试又从零下载 493MB —— 实测用户会反复下载十几分钟，
+ * 最后看到的仍是同一个错误。
+ *
+ * 现在改为：**只在错误确实指向缓存/网络时才清**（见 `isCacheRelatedError`），
+ * 其余情况保留已下好的权重，让降级重试能立刻用上本地文件。
  */
 export async function purgeModelCache(modelId?: string): Promise<void> {
   if (typeof window === 'undefined' || !('caches' in window)) return;
@@ -575,6 +598,37 @@ export async function purgeModelCache(modelId?: string): Promise<void> {
   } catch {
     /* 缓存不可用时忽略 —— 不影响正常下载 */
   }
+}
+
+/**
+ * 判断错误是否由「缓存里的坏数据 / 下载不完整」引起。
+ *
+ * 只有这类错误才值得清缓存重下。
+ * EP 初始化失败、显存不足、算子不支持等错误与缓存无关，
+ * 清了也白清，只是白白让用户再等一次几百MB 的下载。
+ */
+export function isCacheRelatedError(err: unknown): boolean {
+  const text = describeError(err).toLowerCase();
+
+  // 明确指向网络 / 缓存的关键词
+  if (
+    /failed to fetch|network|networkerror|load failed|aborted|timeout|timed out|断网|网络/.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+  // HTTP 层面的失败（4xx / 5xx）
+  if (/http 4\d\d|http 5\d\d|404|403|502|503/.test(text)) {
+    return true;
+  }
+  // 权重文件读不出来 / 解析失败 —— 典型是半截文件
+  if (
+    /unexpected end of|protobuf|parse|corrupt|invalid data|external data/.test(text)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /** 卸载模型（释放显存/内存） */

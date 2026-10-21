@@ -27,12 +27,29 @@ export type RuntimeDevice = 'webgpu' | 'wasm';
 /**
  * 权重精度。
  *
- * - `q4f16` —— q4 量化存储 + fp16 计算，**WebGPU 的正确选择**。
- *   体积与 q4 相当，但计算走 fp16，GPU 上快得多，且算子支持度最好。
- * - `q4` —— 纯 q4 量化，WASM 后端用它（体积最小，不依赖 fp16 能力）。
+ * - `q4` —— 纯 q4 量化。**两个后端都用它**，也是当前唯一��� WebGPU 上实测可用的精度。
+ * - `q4f16` —— q4 量化存储 + fp16 计算。
  *
- * ⚠️ 不要在 WebGPU 上用 `fp16`：那会加载完整半精度权重（体积数倍于 q4），
- * 且部分算子在 WebGPU EP 上不受支持，表现为初始化阶段抛出难以解读的错误。
+ * ## ⚠️ 关于 q4f16 的重要更正（实测结论）
+ *
+ * 早期注释断言「q4f16 是 WebGPU 的正确选择，算子支持度最好」——**这个假设是错的**。
+ * 在 NVIDIA Lovelace（RTX 40 系，`shader-f16` 可用、`crossOriginIsolated=true`）
+ * 上用同一份 Qwen1.5-0.5B 权重做对照实验，结果是：
+ *
+ * | 精度| WebGPU EP | WASM EP |
+ * |------|-----------|----------|
+ * | `q4f16` | ❌ 裸数字失败（130907384 / 999335224 / 1003122552） | ✅ 38s 加载成功 |
+ * | `q4`     | ✅ 61s 加载成功（51 个输入全在 GPU） | ✅ |
+ * | `uint8`  | ✅ 72s 加载成功 | ✅ |
+ *
+ * 也就是说：**失败的是 q4f16 这条精度路径本身**，与显卡、驱动、权重文件都无关。
+ * 同一个模型换 `q4` 就能在 GPU 上跑，说明 WebGPU EP 本身是好的。
+ *
+ * 因此 WebGPU 现在默认用 `q4`；`q4f16` 仅作为用户显式选择时才会被尝试，
+ * 且失败会被降级阶梯自动兜回 `q4`。
+ *
+ * ⚠️ 另外不要在 WebGPU 上用 `fp16`：那会加载完整半精度权重（体积数倍于 q4），
+ * 且部分算子在 WebGPU EP 上不受支持。
  */
 export type RuntimeDtype = 'q4f16' | 'q4';
 
@@ -140,19 +157,33 @@ async function probeWebGpu(): Promise<{
 /**
  * WebGPU 冒烟测试：在适配器上真正跑一次 GPU 计算负载。
  *
- * ## 为什么必须做这一步
+ * ## 它能测出什么、测不出什么
  *
- * `requestAdapter()` + `requestDevice()` 成功**不代表** ONNX Runtime 的
- * WebGPU 执行后端（WebGpuBackend）能真正建起 session。实测中遇到过：
- * 探测全部通过，但加载模型时WebGPU 初始化失败，且 ONNX Runtime
- * 抛出的**不是 Error 实例而是一个裸数字**（如 999335224 / 1888206176），
- * 每次还不一样 —— 那是 wasm 侧未初始化的内存/句柄值，不是可读错误码。
+ * 能测出：浏览器 WebGPU 队列是否可用（buffer 写入 + 映射回读）。
+ * 这类环境问题确实存在 —— 驱动与浏览器实现不匹配、GPU 被其他进程独占、
+ * 安全策略限制等，此时 `requestAdapter` 或队列本身就会出问题。
  *
- * 典型触发条件：驱动版本与浏览器 WebGPU 实现不匹配、
- * 沙箱/远程桌面环境、GPU 被其他进程独占、安全策略限制等。
+ * 测不出：**ONNX Runtime WebGPU 执行后端（JSEP）的初始化**。
+ * 那一层在 `requestAdapter` / `requestDevice` 全部成功之后才开始工作，
+ * 失败时抛的是裸数字（如 999335224 / 130907384 / 1003122552）而非 Error 实例。
  *
- * 这里用一次最小计算（buffer 写入 + 回读）验证 GPU 队列真能工作，
- * 比等到下载完几百MB 权重才发现不能用要划算得多。
+ * ## 那个裸数字的真实原因（实测结论）
+ *
+ * 早期把它归因为「显卡驱动 / 环境不支持 WebGPU」，是误判。
+ * 对照实验（NVIDIA Lovelace、shader-f16 可用、适配器与 device 均正常、
+ * 同一份 493MB Qwen1.5-0.5B 权重）：
+ *
+ * | 精度 | WebGPU EP | WASM EP |
+ * |------|-----------|----------|
+ * | q4f16 | ❌ 裸数字失败 | ✅ |
+ * | q4    | ✅ 成功      | ✅ |
+ *
+ * 所以真正的原因是 **q4f16 精度与 WebGPU EP 不兼容**，
+ * 而不是硬件或环境。本函数测不到它，但 `resolveRuntime` 现在
+ * 默认给 WebGPU 选 q4，从源头上避免触发（见 `RuntimeDtype`）。
+ *
+ * 本函数仍然保留：它挡掉的是「浏览器/驱动层面的 GPU 不可用」，
+ * 这类情况在真实设备上并不罕见。
  */
 async function smokeTestWebGpu(): Promise<{ ok: boolean; reason?: string }> {
   type GpuBuffer = {
@@ -264,9 +295,10 @@ export async function resolveRuntime(
   if (effectivePref === 'webgpu') {
     if (webgpuUsable) {
       device = 'webgpu';
-      // WebGPU 走 q4f16：q4 量化存储 + fp16 计算，
-      // 体积与 q4 相当但计算走 fp16，且算子支持度最好
-      dtype = 'q4f16';
+      // WebGPU 走 q4 —— 实测 q4f16 在 WebGPU EP 上必定失败（抛裸数字），
+      // 详见 RuntimeDtype 的对照实验表。GPU 上 q4 已能跑满，
+      // 没有理由再冒q4f16 失败的风险。
+      dtype = 'q4';
     } else {
       device = 'wasm';
       dtype = 'q4';
@@ -280,7 +312,7 @@ export async function resolveRuntime(
   } else {
     // auto：能用就用，WebGPU 通常比 WASM 快一个数量级
     device = webgpuUsable ? 'webgpu' : 'wasm';
-    dtype = webgpuUsable ? 'q4f16' : 'q4';
+    dtype = 'q4';
     if (!webgpuUsable && smokeReason) {
       fallbackReason = `WebGPU 冒烟测试未通过（${smokeReason}），已使用 WASM`;
     }
