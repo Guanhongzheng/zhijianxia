@@ -13,6 +13,7 @@ import {
 } from './local-engine';
 import { backendChat } from '@/lib/backend/api';
 import type { LanConfig } from '@/lib/backend/client';
+import { runChatChain, type ChainMessage } from './chain';
 
 export type AiMode = 'local' | 'backend';
 
@@ -31,23 +32,34 @@ export class BackendRequiredError extends Error {
 
 /**
  * 统一 AI 对话入口。
- * - mode='local'：走浏览器内 Transformers.js 推理，无需后端
+ * - mode='local'：走浏览器内 ONNX Runtime 推理（WebGPU 优先，WASM 兜底），无需后端
  * - mode='backend'：转发到后端配置的外部 API
+ *
+ * 两种模式都经由 LangChain 的 LCEL 链统一编排（见 chain.ts），
+ * 好处是提示词拆分、输出清洗等行为在两条路径上完全一致，
+ * 也便于将来挂上记忆与流式。
  */
 export async function aiChat(
   ctx: AiRequestContext,
   messages: ChatMessage[],
-  opts: { maxTokens?: number; temperature?: number } = {},
+  opts: { maxTokens?: number; temperature?: number; systemSuffix?: string } = {},
 ): Promise<string> {
+  const { systemSuffix, ...genOpts } = opts;
+
   if (ctx.mode === 'backend') {
     if (!ctx.token) throw new BackendRequiredError();
-    const reply = await backendChat(ctx.lan, ctx.token, messages);
-    return reply.trim();
+    const generator = async (msgs: ChainMessage[]) => {
+      const reply = await backendChat(ctx.lan, ctx.token!, msgs);
+      return reply.trim();
+    };
+    return runChatChain(generator, messages, { systemSuffix });
   }
 
-  // 本地模式：确保模型已加载
+  // 本地模式：确保模型已加载（WebGPU / WASM 由 local-engine 自动决策）
   await loadLocalModel();
-  return localChat(messages, opts);
+  const generator = async (msgs: ChainMessage[]) =>
+    localChat(msgs, genOpts);
+  return runChatChain(generator, messages, { systemSuffix });
 }
 
 /** 预热本地模型（供用户在设置里手动触发） */
@@ -57,3 +69,6 @@ export async function warmupLocalAi(): Promise<void> {
 
 export { getLocalAiState, subscribeLocalAi, loadLocalModel };
 export type { ChatMessage, LocalAiState };
+// 转发链编排能力，供插件与业务模块直接使用
+export { ConversationMemory, chatWithMemory } from './chain';
+export type { ChainMessage } from './chain';

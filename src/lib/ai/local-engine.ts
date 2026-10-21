@@ -15,6 +15,14 @@ import {
   type ModelSourceId,
   type ModelSourceOption,
 } from './local-models';
+import {
+  readRuntimePref,
+  resolveRuntime,
+  saveRuntimePref,
+  type RuntimeDevice,
+  type RuntimeInfo,
+  type RuntimePref,
+} from './runtime';
 
 export {
   DEFAULT_LOCAL_MODEL,
@@ -24,6 +32,13 @@ export {
   findModelSource,
 } from './local-models';
 export type { ModelFamily, ModelSourceId } from './local-models';
+export {
+  readRuntimePref,
+  resolveRuntime,
+  saveRuntimePref,
+  peekRuntime,
+} from './runtime';
+export type { RuntimeDevice, RuntimeInfo, RuntimePref } from './runtime';
 
 export type LocalAiStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -35,6 +50,8 @@ export interface LocalAiState {
   modelId: string;
   /** 当前使用的模型源（魔搭社区 / 官方） */
   sourceId: ModelSourceId;
+  /** 当前推理运行时（WebGPU / WASM） */
+  runtime?: RuntimeInfo;
   error?: string;
 }
 
@@ -147,6 +164,11 @@ export function describeError(err: unknown): string {
 
   const text = Array.from(new Set(parts.filter(Boolean))).join(' | ');
 
+  // WebGPU 侧故障 —— 与模型文件无关，是 GPU/驱动层的问题
+  if (/webgpu|navigator\.gpu|GPUAdapter|GPUDevice|requestAdapter|shader|compilation/i.test(text)) {
+    return `${text}（WebGPU 初始化失败，通常是显卡驱动或浏览器策略问题，可在「设置 · AI」中改用 WASM 运行时）`;
+  }
+
   // wasm 加载失败 —— 推理引擎起不来，与模型源无关
   if (/no available backend|\[wasm\]|wasm/i.test(text)) {
     return `${text}（推理引擎的 wasm 未能加载，请执行 npm run postinstall 生成本地 wasm）`;
@@ -158,6 +180,19 @@ export function describeError(err: unknown): string {
   }
 
   return text;
+}
+
+/**
+ * 切换推理运行时。
+ *
+ * 切换后必须卸载当前模型再重新加载 —— device 属于 session 创建参数，
+ * 已建立的 session 无法原地变更。
+ */
+export async function switchRuntime(pref: RuntimePref): Promise<void> {
+  saveRuntimePref(pref);
+  // 强制重新探测，让新的偏好立即生效
+  await resolveRuntime(pref, true);
+  await unloadLocalModel();
 }
 
 /**
@@ -209,7 +244,7 @@ async function hasLocalWasm(): Promise<boolean> {
  *
  * 背景：Transformers.js 在模块初始化时会把
  * `onnxruntime-web` 的 wasmPaths 设成 `https://cdn.jsdelivr.net/npm/@huggingface/transformers@<ver>/dist/`。
- * 该域名在国内网络下经常 TLS 握手失败，浏览器侧表现为：
+ * 该域名在国内网络下经常TLS 握手失败，浏览器侧表现为：
  *   `no available backend found. ERR: [wasm] TypeError: Failed to fetch`
  * 进而导致模型永远加载不出来（用户看到的「模型加载失败 · Failed to fetch」）。
  *
@@ -220,6 +255,10 @@ async function hasLocalWasm(): Promise<boolean> {
  * 所以本函数必须在 `await import('@huggingface/transformers')` **之后**、
  * `pipeline()` 之前调用（此时 onnxruntime 的 env 仍可改写，
  * 且 wasmPaths 只在 initWasm() 真正初始化时才被读取）。
+ *
+ * @param device 本次推理设备。**关键**：只有 wasm 后端才需要加载 wasm 文件，
+ *                走 WebGPU 时wasm 仅作为 JSEP 的宿主胶水，仍需加载，
+ *                但 numThreads 设置对 GPU 路径无意义。
  */
 async function applyLocalWasm(env: {
   backends?: {
@@ -228,10 +267,11 @@ async function applyLocalWasm(env: {
         wasmPaths?: unknown;
         wasmBinaryFile?: unknown;
         numThreads?: unknown;
+        proxy?: unknown;
       };
     };
   };
-}) {
+}, device: RuntimeDevice) {
   const wasm = env.backends?.onnx?.wasm;
   if (!wasm) return;
 
@@ -242,9 +282,18 @@ async function applyLocalWasm(env: {
   wasm.wasmPaths = dir;
   // 兜底：部分版本使用 wasmBinaryFile 字段
   wasm.wasmBinaryFile = `${dir}ort-wasm-simd-threaded.jsep.wasm`;
-  // 单线程更稳：多线程需要 SharedArrayBuffer，
-  // 在未开启跨域隔离（COOP/COEP）的环境下会直接失败
-  wasm.numThreads = 1;
+
+  if (device === 'wasm') {
+    // 单线程更稳：多线程需要 SharedArrayBuffer，
+    // 在未开启跨域隔离（COOP/COEP）的环境下会直接失败
+    wasm.numThreads = 1;
+    // 强制经由 Worker 代理执行时，jsep glue 需要 proxy 同步可用
+    wasm.proxy = false;
+  } else {
+    // WebGPU 路径：推理在 GPU 上跑，wasm 只做胶水与调度。
+    // 这里保持默认（不开proxy），避免多一次 Worker 跳转带来的延迟。
+    wasm.numThreads = 1;
+  }
 
   if (!useLocal) {
     console.warn(
@@ -264,6 +313,9 @@ async function applyLocalWasm(env: {
  *    命中坏缓存会导致每次都失败。加载前先清掉该模型在 transformers-cache 中的条目；
  * 3. **源自动回退** —— 当前源失败时自动改用备用源重试一次，
  *    避免用户只能看到一句无用的「加载失败」。
+ * 4. **运行时降级** —— WebGPU 失败（驱动异常、显存不足、算子不支持）时
+ *    自动退回 WASM 重试。GPU 路径在真实设备上翻车率不低，
+ *    不做降级会让「能跑」变成「看运气」。
  */
 export async function loadLocalModel(
   modelId: string = DEFAULT_LOCAL_MODEL,
@@ -273,22 +325,30 @@ export async function loadLocalModel(
 
   loadedModelId = modelId;
   const primary = findModelSource(readModelSource());
+
+  // 探测推理运行时（WebGPU 优先）
+  let runtime = await resolveRuntime();
+
   emit({
     status: 'loading',
     progress: 0,
     modelId,
     sourceId: primary.id,
+    runtime,
     error: undefined,
   });
 
-  const attempt = async (source: ModelSourceOption) => {
+  const attempt = async (
+    source: ModelSourceOption,
+    rt: RuntimeInfo,
+  ) => {
     const { pipeline, env } = await import('@huggingface/transformers');
 
     // 允许跨域加载模型资源
     env.allowLocalModels = false;
 
     // 指向国内模型源（默认阿里巴巴魔搭社区），显著提升下载速度。
-    // 魔搭的仓库路径比 HF 多一层 models/，且默认分支叫 master，
+    // 魔搭的仓库路径比HF 多一层 models/，且默认分支叫master，
     // 因此 remoteHost 与 remotePathTemplate 需要按源分别设置。
     env.remoteHost = source.host;
     env.remotePathTemplate = source.pathTemplate;
@@ -298,10 +358,14 @@ export async function loadLocalModel(
     // 该域名在国内常因 TLS 握手失败而报 `Failed to fetch`，
     // 表现为「no available backend found」，模型永远加载不了。
     // 改用同源本地文件后彻底摆脱 CDN 依赖。
-    await applyLocalWasm(env);
+    await applyLocalWasm(env, rt.device);
 
     const instance = await pipeline('text-generation', modelId, {
-      dtype: 'q4',
+      // dtype 与 device 必须配套：
+      // WebGPU 上 fp16 快且稳，WASM 上 q4 体积小、不依赖 fp16 支持
+      dtype: rt.dtype,
+      // WebGPU 不可用时 transformers 会自行回退，但显式声明更可控
+      device: rt.device === 'webgpu' ? 'webgpu' : 'wasm',
       revision: source.revision,
       progress_callback: (p: unknown) => {
         const info = p as {
@@ -330,22 +394,50 @@ export async function loadLocalModel(
 
     let lastError: unknown;
 
-    // 依次尝试：首选源 → 备用源
-    for (const source of orderedSources(primary)) {
-      try {
-        const instance = await attempt(source);
-        // 实际生效的源可能与首选不同，同步给界面
-        if (source.id !== primary.id) emit({ sourceId: source.id });
-        emit({ status: 'ready', progress: 1 });
-        return instance;
-      } catch (err) {
-        lastError = err;
-        console.error(
-          `[zj-ai] 模型加载失败（源：${source.name}）：`,
-          err,
-        );
-        // 换源前清缓存，避免上一个源留下的坏数据
+    /**
+     * 运行时降级顺序：WebGPU → WASM。
+     * 仅当用户没有显式指定 wasm 时才追加 WASM 重试，
+     * 否则用户「就想要 wasm」被GPU 抢占语义会不对。
+     */
+    const runtimes: RuntimeInfo[] =
+      runtime.device === 'webgpu' && runtime.pref !== 'wasm'
+        ? [
+            runtime,
+            {
+              ...runtime,
+              device: 'wasm' as RuntimeDevice,
+              dtype: 'q4' as const,
+              fallbackReason: 'WebGPU 初始化失败，已自动回退到 WASM',
+            },
+          ]
+        : [runtime];
+
+    // 外层遍历运行时，内层遍历模型源 —— 任一组合成功即返回
+    for (const rt of runtimes) {
+      if (rt !== runtime) {
+        // 换了运行时，重置进度并同步给界面
+        emit({ runtime: rt, progress: 0 });
         await purgeModelCache(modelId);
+      }
+
+      for (const source of orderedSources(primary)) {
+        try {
+          const instance = await attempt(source, rt);
+          // 实际生效的源/运行时可能与首选不同，同步给界面
+          if (source.id !== primary.id || rt !== runtime) {
+            emit({ sourceId: source.id, runtime: rt });
+          }
+          emit({ status: 'ready', progress: 1 });
+          return instance;
+        } catch (err) {
+          lastError = err;
+          console.error(
+            `[zj-ai] 模型加载失败（源：${source.name} / 运行时：${rt.device}）：`,
+            err,
+          );
+          // 换源前清缓存，避免上一个源留下的坏数据
+          await purgeModelCache(modelId);
+        }
       }
     }
 

@@ -625,6 +625,30 @@ function log(ok, name, extra = '') {
       '本地模型提供多个模型供用户自选下载',
     );
 
+    // 推理运行时：WebGPU / WASM 可选，且展示实际生效设备
+    log(
+      (aiPanel ?? '').includes('推理运行时') &&
+        (aiPanel ?? '').includes('WebGPU') &&
+        (aiPanel ?? '').includes('WASM'),
+      'AI 引擎提供 WebGPU / WASM 推理运行时切换',
+    );
+    const rtBadge = await page.evaluate(() => {
+      const panel = document.querySelector('[role="dialog"]');
+      if (!panel) return null;
+      const hit = Array.from(panel.querySelectorAll('*')).find(
+        (el) =>
+          el.children.length === 0 &&
+          (el.textContent?.trim() === 'WebGPU' ||
+            el.textContent?.trim() === 'WASM'),
+      );
+      return hit?.textContent?.trim() ?? null;
+    });
+    log(
+      rtBadge === 'WebGPU' || rtBadge === 'WASM',
+      'AI 引擎展示实际生效的推理设备',
+      rtBadge ?? '未找到',
+    );
+
     // API 设置：按能力分类
     await page.evaluate(() => {
       const nav = document.querySelector('[role="dialog"] nav');

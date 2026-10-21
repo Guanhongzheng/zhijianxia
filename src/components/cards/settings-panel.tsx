@@ -40,7 +40,13 @@ import {
   LOCAL_MODEL_OPTIONS,
   MODEL_SOURCES,
   DEFAULT_LOCAL_MODEL,
+  readRuntimePref,
+  resolveRuntime,
+  switchRuntime,
+  peekRuntime,
   type ModelSourceId,
+  type RuntimeInfo,
+  type RuntimePref,
 } from '@/lib/ai/local-engine';
 import { ProfileSettings } from '@/components/cards/profile-settings';
 import { PersonalizationSettings } from '@/components/cards/personalization-settings';
@@ -120,6 +126,12 @@ function AiEngineSettings() {
   const [modelId, setModelId] = useState(DEFAULT_LOCAL_MODEL);
   /** 用户选择的下载源 */
   const [sourceId, setSourceId] = useState<ModelSourceId>(readModelSource());
+  /** 推理运行时偏好（自动 / 强制 WebGPU / 强制 WASM） */
+  const [runtimePref, setRuntimePref] = useState<RuntimePref>(readRuntimePref());
+  /** WebGPU 探测结果 —— 决定是否禁用「强制 WebGPU」选项 */
+  const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | undefined>(
+    peekRuntime(),
+  );
 
   useEffect(() => {
     // 订阅本地模型加载进度
@@ -132,6 +144,20 @@ function AiEngineSettings() {
       clearInterval(timer);
     };
   }, []);
+
+  // 挂载时探测一次 WebGPU 能力，用于在设置里给出明确提示
+  useEffect(() => {
+    let cancelled = false;
+    void resolveRuntime().then((info) => {
+      if (!cancelled) setRuntimeInfo(info);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** 实际生效的运行时：优先用引擎上报的，其次用探测结果 */
+  const activeRuntime = aiState.runtime ?? runtimeInfo;
 
   return (
     <div className="space-y-4">
@@ -304,6 +330,90 @@ function AiEngineSettings() {
               <span className="text-xs text-[var(--zj-muted-fg)]">
                 {Math.round(aiState.progress * 100)}%
               </span>
+            )}
+          </div>
+
+          {/* 推理运行时：WebGPU / ONNX Runtime Web */}
+          <div className="space-y-2 rounded-md border border-[var(--zj-border)] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium">推理运行时</p>
+              <div className="flex items-center gap-1.5">
+                <Badge variant={activeRuntime?.device === 'webgpu' ? 'success' : 'outline'}>
+                  {activeRuntime?.device === 'webgpu' ? 'WebGPU' : 'WASM'}
+                </Badge>
+                {activeRuntime && (
+                  <span className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
+                    {activeRuntime.dtype.toUpperCase()}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: 'auto', label: '自动', hint: '能用WebGPU 就用' },
+                  { id: 'webgpu', label: 'WebGPU', hint: 'GPU 加速，通常快一个数量级' },
+                  { id: 'wasm', label: 'WASM', hint: '兼容性最好' },
+                ] as const
+              ).map((opt) => {
+                const disabled =
+                  opt.id === 'webgpu' &&
+                  runtimeInfo !== undefined &&
+                  !runtimeInfo.hasWebGpuAdapter;
+                const selected = runtimePref === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    title={
+                      disabled
+                        ? '当前浏览器/设备不支持 WebGPU'
+                        : opt.hint
+                    }
+                    disabled={disabled}
+                    onClick={async () => {
+                      if (selected) return;
+                      setRuntimePref(opt.id);
+                      // device 属于 session 创建参数，必须卸载后重新加载才生效
+                      await switchRuntime(opt.id);
+                      setAiState(getLocalAiState());
+                      setRuntimeInfo(await resolveRuntime(opt.id, true));
+                      notify(
+                        opt.id === 'auto'
+                          ? '已切换为自动选择运行时'
+                          : `已切换到 ${opt.label} 运行时，下次加载模型时生效`,
+                        'info',
+                      );
+                    }}
+                    className={`rounded-md border px-2.5 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                      selected
+                        ? 'border-[var(--zj-accent)] bg-[var(--zj-accent)]/10 text-[var(--zj-accent-fg)]'
+                        : 'border-[var(--zj-border)] hover:bg-[var(--zj-muted)]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 能力说明：把「为什么没能用 WebGPU」讲清楚 */}
+            <p className="text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
+              {activeRuntime?.device === 'webgpu'
+                ? `已启用 WebGPU 加速${activeRuntime.adapterInfo ? `（${activeRuntime.adapterInfo}）` : ''}，模型在显卡上推理。`
+                : runtimeInfo && !runtimeInfo.hasWebGpuApi
+                  ? '当前浏览器不支持 WebGPU，将使用 WASM 推理。建议使用较新版本的 Edge / Chrome 以启用 GPU 加速。'
+                  : runtimeInfo && !runtimeInfo.hasWebGpuAdapter
+                    ? '浏览器暴露了 WebGPU 接口，但未能获取到可用的 GPU 适配器（可能是驱动或系统策略限制），将使用 WASM 推理。'
+                    : '正在检测 WebGPU 能力…'}
+            </p>
+
+            {/* 运行中发生的降级要如实告知 */}
+            {activeRuntime?.fallbackReason && (
+              <p className="text-[0.6875rem] text-amber-600 dark:text-amber-400">
+                {activeRuntime.fallbackReason}
+              </p>
             )}
           </div>
 

@@ -182,6 +182,38 @@ Key 永不回传前端，接口只返回 `hasKey` 布尔值。
 - **三重容错**：加载前先清 `transformers-cache`；某个源失败会自动 purge 缓存并按序回退到其它源重试；
   全部失败才报错。避免一次网络抖动导致后续每次都失败
 
+### 推理运行时：WebGPU / ONNX Runtime Web
+
+- **WebGPU 优先**：`src/lib/ai/runtime.ts` 在加载前探测 `navigator.gpu.requestAdapter()`
+  并尝试 `requestDevice()`——两步都成功才算真正可用（有 API 但拿不到适配器的情况很常见，
+  比如无独显、驱动被禁用、浏览器策略限制）。设置 · AI 引擎里可选「自动 / WebGPU / WASM」，
+  不可用时对应选项会被禁用并说明原因
+- **dtype 与 device 配套**：WebGPU 走 `fp16`（GPU 对半精度支持好、速度快），
+  WASM 走 `q4`（体积小、不依赖 fp16 支持）。两者不可随意互换
+- **无需额外产物**：ONNX Runtime Web 的 wasm 有两版文件名，
+  `ort-wasm-simd-threaded.wasm` 是纯 CPU 版，
+  **`ort-wasm-simd-threaded.jsep.wasm` 的 JSEP（JavaScript Execution Provider）才是内含
+  WebGPU/WebNN 执行后端的那份**。`@huggingface/transformers` 默认引用的正是 .jsep 版，
+  也就是说 WebGPU 能力本来就在本地产物里，缺的只是告诉它 `device: 'webgpu'`
+- **自动降级**：WebGPU 在真实设备上翻车率不低（驱动异常、显存不足、算子不支持），
+  因此加载时若 GPU 路径失败会自动 purge 缓存并退回 WASM 重试，
+  设置面板会如实显示「WebGPU 初始化失败，已自动回退到 WASM」
+
+### AI 编排：LangChain.js
+
+- `src/lib/ai/chain.ts` 用 LCEL（`RunnableLambda` + `StringOutputParser`）把
+  「本地推理」与「后端转发」两条路径编排成同一条链，
+  因此提示词拆分、输出清洗等行为在两条路径上完全一致
+- 职责：拆分 system 提示词 → 调底层生成器 → 清洗模型输出
+  （清掉 `<|im_start|>` / `<|im_end|>` / Llama `[INST]` 等模板残留与重复角色前缀）→ 解析为纯文本
+- 内置 `ConversationMemory` 记忆（基于 `InMemoryChatMessageHistory`，按轮裁剪防上下文溢出），
+  后续换持久化记忆只需替换实现，调用方无感
+- ⚠️ **包结构坑**：`@langchain/core@1.2.x` 的**主入口是空壳**
+  （dist 里是 `__exportAll({})`，运行时导不出任何符号，构建能过但运行时报
+  `xxx is not a constructor`）。必须从**子路径**导入：
+  `@langchain/core/runnables`、`/messages`、`/chat_history`、`/prompts`、`/output_parsers`。
+  契约测试里有一条断言专门盯着这件事，防止将来有人改成主入口导入
+
 ### 主题包系统
 
 - 以「主题包」为最小管理单元，每个主题包含：名称、亮/暗模式、主色、辅助色、卡片背景、文字色、阴影强度、壁纸资源、**品牌图标**、**卡片风格**、**导航栏风格**、**主题分类**
@@ -508,6 +540,8 @@ zhijianxia/
 │   │   ├── ai/
 │   │   │   ├── local-engine.ts      # 本地推理引擎（魔搭社区 + 多模型模板）
 │   │   │   ├── local-models.ts      # ⭐ 本地模型清单与下载源
+│   │   │   ├── runtime.ts           # ⭐ 推理运行时探测（WebGPU / WASM）
+│   │   │   ├── chain.ts             # ⭐ LangChain LCEL 编排层（须用子路径导入）
 │   │   │   ├── api-providers.ts     # ⭐ API 服务商清单读取器
 │   │   │   └── scheduler.ts         # 统一 AI 调度层
 │   │   ├── backend/

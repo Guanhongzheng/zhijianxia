@@ -259,6 +259,47 @@ async function req(path, { method = 'GET', body, token } = {}) {
     'hub.js 含 id: messageId + lastInsertRowid'
   );
 
+  // @langchain/core@1.2.x 的主入口 dist 是空壳（__exportAll({})），
+  // 运行时导不出任何符号。必须从子路径导入，否则构建通过但运行时报错。
+  const chainSrc = readFileSync(
+    new URL('../src/lib/ai/chain.ts', import.meta.url),
+    'utf8'
+  );
+  const badImport = chainSrc.match(/from '@langchain\/core'/);
+  check(
+    !badImport,
+    'LangChain 一律从子路径导入（主入口为空壳包）',
+    badImport ? "存在 from '@langchain/core' 主入口导入" : '无主入口导入'
+  );
+  check(
+    /@langchain\/core\/runnables/.test(chainSrc) &&
+      /@langchain\/core\/output_parsers/.test(chainSrc) &&
+      /@langchain\/core\/messages/.test(chainSrc),
+    'LangChain 链使用了 runnables / output_parsers / messages 子路径',
+    '子路径导入齐全'
+  );
+
+  // 运行时探测：WebGPU 优先，且 dtype 必须与 device 配套
+  const runtimeSrc = readFileSync(
+    new URL('../src/lib/ai/runtime.ts', import.meta.url),
+    'utf8'
+  );
+  check(
+    /navigator/.test(runtimeSrc) && /requestAdapter/.test(runtimeSrc),
+    '运行时探测包含 navigator.gpu 与 requestAdapter 调用',
+    'WebGPU 探测逻辑存在'
+  );
+  const engineSrc = readFileSync(
+    new URL('../src/lib/ai/local-engine.ts', import.meta.url),
+    'utf8'
+  );
+  check(
+    /device:\s*rt\.device === 'webgpu' \? 'webgpu' : 'wasm'/.test(engineSrc) &&
+      /dtype:\s*rt\.dtype/.test(engineSrc),
+    'pipeline 显式传入 device 与 dtype（WebGPU 走 fp16 / WASM 走 q4）',
+    'device + dtype 已接线'
+  );
+
   // 清理
   await req(`/api/groups/${groupId}`, { method: 'DELETE', token: tokenA });
   await req(`/api/notices/${noticeId}`, { method: 'DELETE', token: adminToken });
