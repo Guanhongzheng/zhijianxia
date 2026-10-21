@@ -188,8 +188,18 @@ Key 永不回传前端，接口只返回 `hasKey` 布尔值。
   并尝试 `requestDevice()`——两步都成功才算真正可用（有 API 但拿不到适配器的情况很常见，
   比如无独显、驱动被禁用、浏览器策略限制）。设置 · AI 引擎里可选「自动 / WebGPU / WASM」，
   不可用时对应选项会被禁用并说明原因
-- **dtype 与 device 配套**：WebGPU 走 `fp16`（GPU 对半精度支持好、速度快），
-  WASM 走 `q4`（体积小、不依赖 fp16 支持）。两者不可随意互换
+- **dtype 与 device 配套**：WebGPU 走 **`q4f16`**（q4 量化存储 + fp16 计算），
+  WASM 走 `q4`（体积小、不依赖 fp16 支持）。
+  ⚠️ **WebGPU 上不要用 `fp16`** —— 会加载完整半精度权重（体积数倍于 q4），
+  且部分算子在 WebGPU EP 上不受支持，表现为初始化阶段抛出**难以解读的错误**
+  （底层甚至直接抛一个裸数字，如 `throw 1888206176`）。
+  `q4f16` 才是 WebGPU EP 的正确选择，`DATA_TYPES` 里本就定义了这个组合
+- **三级降级阶梯**：WebGPU(q4f16) → WebGPU(q4) → WASM(q4)。
+  保留 GPU 内降级是因为部分显卡/驱动的 fp16 算子支持不全、纯 q4 反而能跑；
+  只做「WebGPU → WASM」一级跳转会白白丢掉 GPU 加速
+- **错误必须归一化**：除 `describeError` 外新增 `describeNonError`——
+  Transformers.js / ONNX Runtime 有时抛出的**不是 Error 实例**而是裸数字或裸对象，
+  旧实现一律返回「本地模型加载失败」，把线索全丢光，界面上只剩一个无从下手的数字
 - **无需额外产物**：ONNX Runtime Web 的 wasm 有两版文件名，
   `ort-wasm-simd-threaded.wasm` 是纯 CPU 版，
   **`ort-wasm-simd-threaded.jsep.wasm` 的 JSEP（JavaScript Execution Provider）才是内含

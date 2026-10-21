@@ -38,7 +38,7 @@ export {
   saveRuntimePref,
   peekRuntime,
 } from './runtime';
-export type { RuntimeDevice, RuntimeInfo, RuntimePref } from './runtime';
+export type { RuntimeDevice, RuntimeDtype, RuntimeInfo, RuntimePref } from './runtime';
 
 export type LocalAiStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -124,17 +124,77 @@ export function isLocalAiReady(): boolean {
 }
 
 /**
+ * 非 Error 值的错误描述。
+ *
+ * 底层库抛出的东西五花八门：可能是裸数字（错误码）、
+ * 可能是 `{ status, statusText }` 这样的普通对象，也可能是字符串。
+ * 这里逐类展开，并在只剩一个无法解释的数字时明确说明，
+ * 避免用户看到「1888206176」这种彻底无从下手的报错。
+ */
+function describeNonError(err: unknown): string {
+  if (err === null) return '本地模型加载失败（错误原因为 null）';
+  if (err === undefined) return '本地模型加载失败（错误原因为 undefined）';
+
+  if (typeof err === 'string') {
+    return err.trim() || '本地模型加载失败（错误原因为空字符串）';
+  }
+
+  if (typeof err === 'number') {
+    return (
+      `底层库抛出了未包装的错误码 ${err}` +
+      `（该数值不是可读信息，通常出现在权重文件缺失或推理后端初始化失败时；` +
+      `请尝试在「设置 · AI 引擎」切换到 WASM 运行时，或换一个模型源后重试）`
+    );
+  }
+
+  if (typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    //常见的 { status, statusText } 形态
+    if (typeof o.status === 'number' || typeof o.statusText === 'string') {
+      const bits = [
+        typeof o.status === 'number' ? `HTTP ${o.status}` : null,
+        typeof o.statusText === 'string' ? o.statusText : null,
+        typeof o.message === 'string' ? o.message : null,
+      ].filter(Boolean);
+      const joined = bits.join(' | ');
+      if (/404/.test(joined)) {
+        return `${joined}（模型仓库中没有该精度的权重文件；可在「设置 · AI 引擎」改用 WASM 运行时，其使用 q4 量化权重）`;
+      }
+      if (joined) return joined;
+    }
+    try {
+      const json = JSON.stringify(err);
+      if (json && json !== '{}') return json.slice(0, 300);
+    } catch {
+      /* 含循环引用等无法序列化的值 */
+    }
+  }
+
+  return `本地模型加载失败（错误类型：${typeof err}）`;
+}
+
+/**
  * 提取可读的错误描述。
  *
  * Transformers.js 的报错信息往往藏在 cause 里，
  * 这里把 message / cause / status 一并展开，便于界面提示与控制台排查。
  *
- * 另外识别两类高频故障并给出**可执行的**修复建议：
+ * 另外识别几类高频故障并给出**可执行的**修复建议：
+ * - `HTTP 404` —— 模型仓库缺该精度的权重（常见于给 WebGPU 指定 fp16，
+ *   而仓库只发布了 q4）
  * - `no available backend found` / `[wasm]` —— 推理引擎的 wasm 没拿到
+ * - `webgpu` / `GPUDevice` —— GPU 或驱动层的问题
  * - 单纯的 `Failed to fetch` —— 模型文件下载失败
+ *
+ * ⚠️ Transformers.js / ONNX Runtime 有时抛出的**不是 Error 实例**，
+ * 而是裸数字或裸对象（曾观测到 `throw 1888206176`）。
+ * 旧实现对非 Error 一律返回「本地模型加载失败」，把所有线索丢光，
+ * 界面上只剩一个无法理解的报错。这里必须把非Error 也如实展开。
  */
 export function describeError(err: unknown): string {
-  if (!(err instanceof Error)) return '本地模型加载失败';
+  if (!(err instanceof Error)) {
+    return describeNonError(err);
+  }
 
   const parts: string[] = [err.message];
 
@@ -163,6 +223,12 @@ export function describeError(err: unknown): string {
   }
 
   const text = Array.from(new Set(parts.filter(Boolean))).join(' | ');
+
+  // 权重文件 404 —— 通常是「该模型仓库没有这个精度的权重」
+  // 典型场景：为 WebGPU 指定 fp16，但模型仓库只发布了 q4 量化权重
+  if (/HTTP 404|status:\s*404|not found/i.test(text)) {
+    return `${text}（模型仓库中没有该精度的权重文件；可在「设置 · AI 引擎」改用 WASM 运行时，其使用q4 量化权重）`;
+  }
 
   // WebGPU 侧故障 —— 与模型文件无关，是 GPU/驱动层的问题
   if (/webgpu|navigator\.gpu|GPUAdapter|GPUDevice|requestAdapter|shader|compilation/i.test(text)) {
@@ -361,8 +427,12 @@ export async function loadLocalModel(
     await applyLocalWasm(env, rt.device);
 
     const instance = await pipeline('text-generation', modelId, {
-      // dtype 与 device 必须配套：
-      // WebGPU 上 fp16 快且稳，WASM 上 q4 体积小、不依赖 fp16 支持
+      // dtype 与 device 严格配套：
+      //   WebGPU → q4f16（q4 量化存储 + fp16 计算，GPU 上的正确选择）
+      //   WASM   → q4（纯量化，体积最小、不依赖 fp16 能力）
+      // ⚠️ WebGPU 上不要用 fp16：会加载完整半精度权重（体积数倍于 q4），
+      // 且部分算子在 WebGPU EP 上不受支持，表现为初始化阶段抛出
+      // 难以解读的错误（曾观测到底层直接抛出一个裸数字）。
       dtype: rt.dtype,
       // WebGPU 不可用时 transformers 会自行回退，但显式声明更可控
       device: rt.device === 'webgpu' ? 'webgpu' : 'wasm',
@@ -395,22 +465,34 @@ export async function loadLocalModel(
     let lastError: unknown;
 
     /**
-     * 运行时降级顺序：WebGPU → WASM。
+     * 降级阶梯：WebGPU(q4f16) → WebGPU(q4) → WASM(q4)。
+     *
+     * 为什么要 WebGPU 内部再降一档：部分显卡/驱动上q4f16 所需的
+     * fp16 算子支持不全会初始化失败，但纯 q4 量化反而能跑。
+     * 只做「WebGPU → WASM」一级跳转会白白丢掉 GPU 加速。
+     *
      * 仅当用户没有显式指定 wasm 时才追加 WASM 重试，
-     * 否则用户「就想要 wasm」被GPU 抢占语义会不对。
+     * 否则用户「就想要 wasm」被 GPU 抢占语义会不对。
      */
-    const runtimes: RuntimeInfo[] =
-      runtime.device === 'webgpu' && runtime.pref !== 'wasm'
-        ? [
-            runtime,
-            {
-              ...runtime,
-              device: 'wasm' as RuntimeDevice,
-              dtype: 'q4' as const,
-              fallbackReason: 'WebGPU 初始化失败，已自动回退到 WASM',
-            },
-          ]
-        : [runtime];
+    const runtimes: RuntimeInfo[] = (() => {
+      if (runtime.device !== 'webgpu') return [runtime];
+      const ladder: RuntimeInfo[] = [runtime];
+      // 用户显式锁定 webgpu 时也保留 GPU 内部降级 —— 那是精度调整，不是换设备
+      ladder.push({
+        ...runtime,
+        dtype: 'q4',
+        fallbackReason: 'q4f16 初始化失败，已在 GPU 上改用 q4 量化权重',
+      });
+      if (runtime.pref !== 'wasm') {
+        ladder.push({
+          ...runtime,
+          device: 'wasm' as RuntimeDevice,
+          dtype: 'q4' as const,
+          fallbackReason: 'WebGPU 初始化失败，已自动回退到 WASM',
+        });
+      }
+      return ladder;
+    })();
 
     // 外层遍历运行时，内层遍历模型源 —— 任一组合成功即返回
     for (const rt of runtimes) {
@@ -431,8 +513,11 @@ export async function loadLocalModel(
           return instance;
         } catch (err) {
           lastError = err;
+          // 用 describeError 归一化后再打日志：底层有时抛裸数字/裸对象，
+          // 直接 console.error(err) 控制台里只会显示一个无从下手的数值
           console.error(
-            `[zj-ai] 模型加载失败（源：${source.name} / 运行时：${rt.device}）：`,
+            `[zj-ai] 模型加载失败（源：${source.name} / 运行时：${rt.device} / 精度：${rt.dtype}）：`,
+            describeError(err),
             err,
           );
           // 换源前清缓存，避免上一个源留下的坏数据

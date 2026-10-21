@@ -296,8 +296,36 @@ async function req(path, { method = 'GET', body, token } = {}) {
   check(
     /device:\s*rt\.device === 'webgpu' \? 'webgpu' : 'wasm'/.test(engineSrc) &&
       /dtype:\s*rt\.dtype/.test(engineSrc),
-    'pipeline 显式传入 device 与 dtype（WebGPU 走 fp16 / WASM 走 q4）',
+    'pipeline 显式传入 device 与 dtype（WebGPU 走 q4f16 / WASM 走 q4）',
     'device + dtype 已接线'
+  );
+
+  // WebGPU 上不能用 fp16：会加载完整半精度权重（体积数倍于 q4），
+  // 且部分算子在 WebGPU EP 上不受支持，表现为抛出无法解读的裸数字
+  const rtSrc2 = readFileSync(
+    new URL('../src/lib/ai/runtime.ts', import.meta.url),
+    'utf8'
+  );
+  const assignsFp16 = /dtype\s*=\s*'fp16'/.test(rtSrc2);
+  check(
+    !assignsFp16 && /dtype = webgpuUsable \? 'q4f16' : 'q4'/.test(rtSrc2),
+    'WebGPU 运行时使用 q4f16 而非 fp16',
+    assignsFp16 ? '仍存在 dtype=fp16 赋值' : 'WebGPU→q4f16，WASM→q4'
+  );
+
+  // 降级阶梯：WebGPU(q4f16) → WebGPU(q4) → WASM(q4)
+  check(
+    /dtype: 'q4',\s*\n\s*fallbackReason: 'q4f16 初始化失败/.test(engineSrc),
+    'WebGPU 内部保留 q4 降级档（部分显卡 fp16 算子不全）',
+    '降级阶梯含 GPU 内 q4 档'
+  );
+
+  // 底层有时抛裸数字/裸对象，describeError 必须如实展开而非丢弃
+  check(
+    /describeNonError/.test(engineSrc) &&
+      /底层库抛出了未包装的错误码/.test(engineSrc),
+    'describeError 能处理非 Error 值（裸数字/裸对象）',
+    'describeNonError 已实现'
   );
 
   // 清理

@@ -24,6 +24,18 @@ export type RuntimePref = 'auto' | 'webgpu' | 'wasm';
 /** 实际生效的推理设备 */
 export type RuntimeDevice = 'webgpu' | 'wasm';
 
+/**
+ * 权重精度。
+ *
+ * - `q4f16` —— q4 量化存储 + fp16 计算，**WebGPU 的正确选择**。
+ *   体积与 q4 相当，但计算走 fp16，GPU 上快得多，且算子支持度最好。
+ * - `q4` —— 纯 q4 量化，WASM 后端用它（体积最小，不依赖 fp16 能力）。
+ *
+ * ⚠️ 不要在 WebGPU 上用 `fp16`：那会加载完整半精度权重（体积数倍于 q4），
+ * 且部分算子在 WebGPU EP 上不受支持，表现为初始化阶段抛出难以解读的错误。
+ */
+export type RuntimeDtype = 'q4f16' | 'q4';
+
 /** 运行时探测结果 */
 export interface RuntimeInfo {
   /** 浏览器是否暴露了 WebGPU 接口 */
@@ -35,7 +47,7 @@ export interface RuntimeInfo {
   /** 本次实际选中的设备 */
   device: RuntimeDevice;
   /** 本次实际选中的权重精度 */
-  dtype: 'fp16' | 'q4';
+  dtype: RuntimeDtype;
   /** 用户偏好 */
   pref: RuntimePref;
   /** 若偏好无法满足，说明原因（如「已指定 WebGPU 但浏览器不支持」） */
@@ -142,14 +154,15 @@ export async function resolveRuntime(
   const webgpuUsable = probe.hasWebGpuApi && probe.hasWebGpuAdapter;
 
   let device: RuntimeDevice;
-  let dtype: 'fp16' | 'q4';
+  let dtype: RuntimeDtype;
   let fallbackReason: string | undefined;
 
   if (effectivePref === 'webgpu') {
     if (webgpuUsable) {
       device = 'webgpu';
-      // WebGPU 走 fp16：GPU 对半精度支持好，且比 q4 更快
-      dtype = 'fp16';
+      // WebGPU 走 q4f16：q4 量化存储 + fp16 计算，
+      // 体积与 q4 相当但计算走 fp16，且算子支持度最好
+      dtype = 'q4f16';
     } else {
       device = 'wasm';
       dtype = 'q4';
@@ -163,7 +176,7 @@ export async function resolveRuntime(
   } else {
     // auto：能用就用，WebGPU 通常比 WASM 快一个数量级
     device = webgpuUsable ? 'webgpu' : 'wasm';
-    dtype = webgpuUsable ? 'fp16' : 'q4';
+    dtype = webgpuUsable ? 'q4f16' : 'q4';
   }
 
   const info: RuntimeInfo = {
