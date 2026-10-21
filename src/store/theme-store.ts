@@ -7,6 +7,7 @@ import {
   SHADOW_PRESETS,
   THEME_MODE_KEY,
   THEME_STORAGE_KEY,
+  normalizeThemePack,
   type ThemePack,
   type ThemeVariant,
   type WallpaperRef,
@@ -47,6 +48,11 @@ interface ThemeState {
   resetPacks: () => void;
   setWallpaper: (mode: ThemeMode, ref: WallpaperRef) => Promise<void>;
   uploadWallpaper: (mode: ThemeMode, file: File) => Promise<void>;
+  /**
+   * 局部更新当前主题包（用于「主题定制」编辑器）。
+   * 内置包会被派生为自定义副本后再修改。
+   */
+  patchActivePack: (patch: Partial<ThemePack>) => void;
   /** 内部：把指定主题包的壁纸应用到 DOM */
   applyWallpaperFor: (pack: ThemePack, mode: ThemeMode) => Promise<void>;
 }
@@ -73,6 +79,15 @@ function buildCssVars(pack: ThemePack, mode: ThemeMode) {
   // 主色前景色：按主色亮度自动选黑/白，保证对比度
   const fg = pickForeground(v.accent);
   set('--zj-accent-fg', fg);
+
+  // 卡片与导航栏风格：由 data-* 属性驱动 globals.css 中的样式
+  const card = pack.card ?? {};
+  const nav = pack.nav ?? {};
+  root.dataset.cardStyle = card.style ?? 'elevated';
+  root.dataset.cardBorderWidth = String(card.borderWidth ?? 1);
+  root.dataset.cardAccentBar = card.accentBar ? '1' : '0';
+  root.dataset.navStyle = nav.style ?? 'flat';
+  root.dataset.navHeight = nav.height ? `${nav.height}px` : '';
 }
 
 /** 根据背景色亮度选择黑或白文字 */
@@ -126,7 +141,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   /** 初始化：读取 LocalStorage 中的主题包与当前选择 */
   init: async () => {
     const custom = readLocal<ThemePack[]>(THEME_STORAGE_KEY, []);
-    const packs = [...BUILTIN_THEME_PACKS, ...custom.filter((p) => !p.builtin)];
+    const packs = [
+      ...BUILTIN_THEME_PACKS,
+      ...custom
+        .filter((p) => !p.builtin)
+        .map((p) => normalizeThemePack(p)),
+    ];
     const activePackId = readLocal<string>(ACTIVE_THEME_KEY, 'ink-default');
     const mode = readLocal<ThemeMode>(THEME_MODE_KEY, 'light');
     const safePackId = packs.some((p) => p.id === activePackId)
@@ -178,17 +198,18 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (idx < 0) return;
 
     const base = packs[idx];
-    const next: ThemePack = base.builtin
-      ? {
-          ...base,
-          id: `custom-${Date.now()}`,
-          builtin: false,
-          name: `${base.name} · 自定义`,
-          light: { ...base.light },
-          dark: { ...base.dark },
-          createdAt: Date.now(),
-        }
-      : { ...base, light: { ...base.light }, dark: { ...base.dark } };
+    const next: ThemePack = {
+      ...base,
+      id: base.builtin ? `custom-${base.id}` : base.id,
+      builtin: false,
+      name: base.builtin ? `${base.name} · 自定义` : base.name,
+      light: { ...base.light },
+      dark: { ...base.dark },
+      brand: { ...(base.brand ?? {}) },
+      card: { ...(base.card ?? {}) },
+      nav: { ...(base.nav ?? {}) },
+      createdAt: Date.now(),
+    };
 
     const variant = mode === 'dark' ? next.dark : next.light;
     variant.accent = hex;
@@ -223,7 +244,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   /** 保存自定义主题包 */
   saveCustomPack: (pack) => {
     const { packs } = get();
-    const next = [...packs.filter((p) => p.id !== pack.id), { ...pack, builtin: false }];
+    const next = [
+      ...packs.filter((p) => p.id !== pack.id),
+      { ...normalizeThemePack(pack), builtin: false },
+    ];
     writeLocal(THEME_STORAGE_KEY, next.filter((p) => !p.builtin));
     set({ packs: next });
   },
@@ -287,11 +311,72 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     set({ wallpaperUrl: url });
     applyWallpaper(pack, mode, url);
   },
+
+  /**
+   * 局部更新当前主题包。
+   * 内置包不可直接改写 —— 先派生一个「· 自定义」副本，再在副本上打补丁。
+   */
+  patchActivePack: (patch) => {
+    const { packs, activePackId, mode } = get();
+    const idx = packs.findIndex((p) => p.id === activePackId);
+    if (idx < 0) return;
+
+    const base = packs[idx];
+    const target: ThemePack = base.builtin
+      ? {
+          ...base,
+          // 派生 ID 稳定：同一个内置包的多次定制落到同一个自定义副本
+          id: `custom-${base.id}`,
+          builtin: false,
+          name: `${base.name} · 自定义`,
+          light: { ...base.light },
+          dark: { ...base.dark },
+          brand: { ...(base.brand ?? {}) },
+          card: { ...(base.card ?? {}) },
+          nav: { ...(base.nav ?? {}) },
+          createdAt: Date.now(),
+        }
+      : {
+          ...base,
+          light: { ...base.light },
+          dark: { ...base.dark },
+          brand: { ...(base.brand ?? {}) },
+          card: { ...(base.card ?? {}) },
+          nav: { ...(base.nav ?? {}) },
+        };
+
+    const next: ThemePack = normalizeThemePack({
+      ...target,
+      ...patch,
+      light: patch.light ?? target.light,
+      dark: patch.dark ?? target.dark,
+      brand: patch.brand ?? target.brand,
+      card: patch.card ?? target.card,
+      nav: patch.nav ?? target.nav,
+    });
+
+    const nextPacks =
+      base.builtin
+        ? [...packs.slice(0, idx + 1), next, ...packs.slice(idx + 1)]
+        : packs.map((p, i) => (i === idx ? next : p));
+
+    writeLocal(THEME_STORAGE_KEY, nextPacks.filter((p) => !p.builtin));
+    writeLocal(ACTIVE_THEME_KEY, next.id);
+    set({ packs: nextPacks, activePackId: next.id });
+    buildCssVars(next, mode);
+  },
 }));
 
+/** 当前生效主题包的品牌配置（供顶栏使用） */
+export function useThemeBrand() {
+  const packs = useThemeStore((s) => s.packs);
+  const activePackId = useThemeStore((s) => s.activePackId);
+  const pack = packs.find((p) => p.id === activePackId) ?? packs[0];
+  return pack?.brand ?? { icon: '📦', name: '智简匣', tagline: '本地离线 AI 工具箱' };
+}
+
 /** 供插件读取当前主题快照 */
-export function readThemeSnapshot() {
-  const { packs, activePackId, mode } = useThemeStore.getState();
+export function readThemeSnapshot() {  const { packs, activePackId, mode } = useThemeStore.getState();
   const pack = packs.find((p) => p.id === activePackId) ?? packs[0];
   const variant = mode === 'dark' ? pack.dark : pack.light;
   return {
@@ -299,6 +384,9 @@ export function readThemeSnapshot() {
     accent: variant.accent,
     packId: pack.id,
     packs,
+    brand: pack.brand,
+    card: pack.card,
+    nav: pack.nav,
     tokens: {
       bg: variant.bg,
       card: variant.card,

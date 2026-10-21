@@ -6,6 +6,7 @@ import {
   Download,
   Info,
   Package,
+  Palette,
   Search,
   Trash2,
   Upload,
@@ -25,6 +26,7 @@ import {
 import { usePluginStore } from '@/store/plugin-store';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
+import { ThemeMarketplacePanel } from '@/components/cards/theme-marketplace-panel';
 import {
   MARKETPLACE_ENTRIES,
   MARKETPLACE_CATEGORIES,
@@ -37,8 +39,51 @@ import {
 } from '@/lib/backend/registry';
 import { hasCachedPluginPackage } from '@/lib/registry-cache';
 
+/** 广场的两大分类：插件与主题 */
+const MARKETPLACE_TABS = [
+  { id: 'plugin' as const, name: '插件', icon: Package },
+  { id: 'theme' as const, name: '主题', icon: Palette },
+];
+
 /** 功能广场：插件市场 */
 export function MarketplacePanel() {
+  const [tab, setTab] = useState<'plugin' | 'theme'>('plugin');
+
+  return (
+    <div className="space-y-4">
+      {/* 插件 / 主题 分类切换 */}
+      <div className="flex gap-1.5 rounded-md bg-[var(--zj-muted)] p-1">
+        {MARKETPLACE_TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                tab === t.id
+                  ? 'bg-[var(--zj-card)] text-[var(--zj-fg)] shadow-sm'
+                  : 'text-[var(--zj-muted-fg)] hover:text-[var(--zj-fg)]'
+              }`}
+            >
+              <Icon className="size-3.5" />
+              {t.name}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === 'plugin' ? (
+        <PluginMarketplace />
+      ) : (
+        <ThemeMarketplacePanel />
+      )}
+    </div>
+  );
+}
+
+/** 插件市场列表 */
+function PluginMarketplace() {
   const installed = usePluginStore((s) => s.installed);
   const installing = usePluginStore((s) => s.importing);
   const install = usePluginStore((s) => s.install);

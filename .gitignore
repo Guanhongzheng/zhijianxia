@@ -33,6 +33,9 @@ pnpm-debug.log*
 # plugin build cache
 src/plugins/generated/
 
+# e2e 截图产物
+shot-*.png
+
 # plugin packages
 dist-plugins/
 

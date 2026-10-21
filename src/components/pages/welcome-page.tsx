@@ -25,6 +25,7 @@ export function WelcomePage({ onEnter }: { onEnter: () => void }) {
           title="智简匣"
           subtitle="本地离线 AI 工具箱"
           icon={Sparkles}
+          preferBrandName
         />
       </div>
 

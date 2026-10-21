@@ -652,6 +652,53 @@ function log(ok, name, extra = '') {
       (personalizationText ?? '').includes('广场主题包'),
       '个性化提供广场主题包区域',
     );
+    log(
+      (personalizationText ?? '').includes('主题定制'),
+      '个性化提供主题定制区（图标 / 卡片 / 导航栏 / 配色 / 壁纸）',
+    );
+
+    // 主题定制：卡片风格切换会写回 data-card-style
+    const cardStyleBefore = await page.evaluate(() =>
+      document.documentElement.dataset.cardStyle,
+    );
+    await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('[role="dialog"] button'));
+      const b = btns.find(
+        (x) =>
+          x.textContent.trim() === '扁平' &&
+          x.closest('section')?.textContent.includes('卡片样式'),
+      );
+      if (b) b.click();
+    });
+    await page.waitForTimeout(1200);
+    const cardStyleAfter = await page.evaluate(() =>
+      document.documentElement.dataset.cardStyle,
+    );
+    log(
+      cardStyleBefore !== cardStyleAfter && cardStyleAfter === 'flat',
+      '主题定制可切换卡片风格',
+      `${cardStyleBefore} → ${cardStyleAfter}`,
+    );
+
+    const navStyleAfter = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('[role="dialog"] button'));
+      const b = btns.find(
+        (x) =>
+          x.textContent.trim() === '毛玻璃' &&
+          x.closest('section')?.textContent.includes('导航栏样式'),
+      );
+      if (b) b.click();
+      return true;
+    });
+    await page.waitForTimeout(1000);
+    const navStyle = await page.evaluate(() =>
+      document.documentElement.dataset.navStyle,
+    );
+    log(
+      navStyleAfter && navStyle === 'glass',
+      '主题定制可切换导航栏风格',
+      navStyle,
+    );
 
     await page.keyboard.press('Escape');
     await page.waitForTimeout(800);
@@ -677,6 +724,31 @@ function log(ok, name, extra = '') {
     log(
       (market ?? '').includes('可离线'),
       '已下载的插件在广场标记为「可离线」',
+    );
+
+    // 广场的主题分类页
+    const themeTab = await page.evaluate(() => {
+      const btns = Array.from(
+        document.querySelectorAll('[role="dialog"] button'),
+      );
+      const b = btns.find(
+        (x) => x.textContent.trim() === '主题' && x.querySelector('svg'),
+      );
+      if (b) b.click();
+      return !!b;
+    });
+    await page.waitForTimeout(2000);
+    const themeMarket = (await page.textContent('[role="dialog"]')) ?? '';
+    log(themeTab, '功能广场提供「主题」分类页');
+    log(
+      ['综合', '配色', '卡片', '导航栏', '壁纸', '图标'].every((c) =>
+        themeMarket.includes(c),
+      ),
+      '主题分类包含配色 / 卡片 / 导航栏 / 壁纸 / 图标等维度',
+    );
+    log(
+      themeMarket.includes('内置主题'),
+      '主题分类列出内置主题（可离线直接使用）',
     );
 
     await page.keyboard.press('Escape');

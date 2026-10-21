@@ -25,6 +25,94 @@ const COLOR_PATTERN = /^#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 /** 主题配色必填的颜色字段 */
 const THEME_COLOR_FIELDS = ['accent', 'accentSoft', 'card', 'bg', 'fg', 'mutedFg', 'border'];
 
+/** 卡片风格枚举 */
+const CARD_STYLES = ['flat', 'elevated', 'outline', 'glass'];
+
+/** 导航栏风格枚举 */
+const NAV_STYLES = ['flat', 'glass', 'solid', 'minimal'];
+
+/** 主题包分类枚举（与前端 src/lib/theme/categories.ts 保持一致） */
+const THEME_CATEGORIES = ['综合', '配色', '卡片', '导航栏', '壁纸', '图标'];
+
+/**
+ * 归一化主题分类
+ * @param {unknown} value
+ * @returns {string} 合法分类，非法时回落到「综合」
+ */
+function normalizeThemeCategory(value) {
+  if (typeof value !== 'string') return '综合';
+  const v = value.trim();
+  return THEME_CATEGORIES.includes(v) ? v : '综合';
+}
+
+/**
+ * 校验品牌段（可选）
+ * @param {unknown} value
+ * @returns {string|null} 错误提示，通过时返回 null
+ */
+function validateThemeBrand(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return '主题包 brand（品牌）段不合法：应为对象';
+  }
+  for (const field of ['icon', 'name', 'tagline']) {
+    if (value[field] !== undefined && typeof value[field] !== 'string') {
+      return `主题包 brand.${field} 不合法：应为字符串`;
+    }
+  }
+  return null;
+}
+
+/**
+ * 校验卡片段（可选）
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+function validateThemeCard(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return '主题包 card（卡片样式）段不合法：应为对象';
+  }
+  if (value.style !== undefined && !CARD_STYLES.includes(value.style)) {
+    return `主题包 card.style 不合法："${value.style}"，应为 ${CARD_STYLES.join(' / ')}`;
+  }
+  if (value.borderWidth !== undefined) {
+    const w = value.borderWidth;
+    if (typeof w !== 'number' || !Number.isFinite(w) || w < 0 || w > 6) {
+      return `主题包 card.borderWidth 不合法："${w}"，应为 0-6 的数字`;
+    }
+  }
+  if (value.accentBar !== undefined && typeof value.accentBar !== 'boolean') {
+    return '主题包 card.accentBar 不合法：应为布尔值';
+  }
+  return null;
+}
+
+/**
+ * 校验导航栏段（可选）
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+function validateThemeNav(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return '主题包 nav（导航栏样式）段不合法：应为对象';
+  }
+  if (value.style !== undefined && !NAV_STYLES.includes(value.style)) {
+    return `主题包 nav.style 不合法："${value.style}"，应为 ${NAV_STYLES.join(' / ')}`;
+  }
+  if (value.height !== undefined) {
+    const h = value.height;
+    if (typeof h !== 'number' || !Number.isFinite(h) || h < 0 || h > 200) {
+      return `主题包 nav.height 不合法："${h}"，应为 0-200 的数字`;
+    }
+  }
+  if (value.showIcon !== undefined && typeof value.showIcon !== 'boolean') {
+    return '主题包 nav.showIcon 不合法：应为布尔值';
+  }
+  return null;
+}
+
 /**
  * 把 tags 归一化为字符串数组
  * @param {unknown} value 可能是数组或逗号分隔字符串
@@ -165,6 +253,13 @@ function validateThemePack(pack) {
     return { ok: false, error: '主题包 wallpaper 不合法：应为对象' };
   }
 
+  const brandError = validateThemeBrand(pack.brand);
+  if (brandError) return { ok: false, error: brandError };
+  const cardError = validateThemeCard(pack.card);
+  if (cardError) return { ok: false, error: cardError };
+  const navError = validateThemeNav(pack.nav);
+  if (navError) return { ok: false, error: navError };
+
   return {
     ok: true,
     data: {
@@ -175,6 +270,7 @@ function validateThemePack(pack) {
       author: typeof pack.author === 'string' ? pack.author : '',
       preview: typeof pack.preview === 'string' && pack.preview ? pack.preview : '🎨',
       tags: normalizeTags(pack.tags),
+      category: normalizeThemeCategory(pack.category),
     },
   };
 }
@@ -185,9 +281,16 @@ module.exports = {
   SEMVER_PATTERN,
   COLOR_PATTERN,
   THEME_COLOR_FIELDS,
+  CARD_STYLES,
+  NAV_STYLES,
+  THEME_CATEGORIES,
+  normalizeThemeCategory,
   normalizeTags,
   joinTags,
   splitTags,
+  validateThemeBrand,
+  validateThemeCard,
+  validateThemeNav,
   validatePluginPackage,
   validateThemePack,
 };

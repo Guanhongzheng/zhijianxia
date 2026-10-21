@@ -62,6 +62,7 @@ function mapThemeSummary(row) {
     id: row.id,
     name: row.name,
     version: row.version,
+    category: row.category || '综合',
     description: row.description,
     author: row.author,
     preview: row.preview,
@@ -223,6 +224,7 @@ router.get('/themes/:id', requireAuth, (req, res) => {
         id: row.id,
         name: row.name,
         version: row.version,
+        category: row.category || '综合',
         description: row.description,
         author: row.author,
         preview: row.preview,
@@ -261,11 +263,12 @@ router.post('/themes', requireAuth, requireAdmin, (req, res) => {
 
   run(
     `INSERT INTO theme_packages
-       (id, name, version, description, author, preview, tags, pack_json, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (id, name, version, category, description, author, preview, tags, pack_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        version = excluded.version,
+       category = excluded.category,
        description = excluded.description,
        author = excluded.author,
        preview = excluded.preview,
@@ -274,6 +277,7 @@ router.post('/themes', requireAuth, requireAdmin, (req, res) => {
     data.id,
     data.name,
     data.version,
+    data.category,
     data.description,
     data.author,
     data.preview,

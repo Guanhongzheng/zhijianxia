@@ -19,7 +19,48 @@ export interface ThemePack {
     light?: WallpaperRef;
     dark?: WallpaperRef;
   };
+  /** 品牌区：导航栏左侧的应用图标、名称与副标题 */
+  brand?: ThemeBrand;
+  /** 卡片样式：风格、边框宽度、强调条 */
+  card?: ThemeCardStyle;
+  /** 导航栏样式：风格与高度 */
+  nav?: ThemeNavStyle;
+  /** 主题分类：综合 / 配色 / 卡片 / 导航栏 / 壁纸 / 图标 */
+  category?: string;
   createdAt?: number;
+}
+
+/**
+ * 品牌信息 —— 决定上下导航栏左侧的图标与标题。
+ * icon 支持两种写法：emoji（直接文本渲染）或 http(s) 图片地址（渲染为 img）。
+ */
+export interface ThemeBrand {
+  /** 应用图标：emoji 或图片地址 */
+  icon?: string;
+  /** 应用名称 */
+  name?: string;
+  /** 副标题 */
+  tagline?: string;
+}
+
+/** 卡片样式 */
+export interface ThemeCardStyle {
+  /** flat 无阴影 / elevated 阴影 / outline 描边 / glass 毛玻璃 */
+  style?: 'flat' | 'elevated' | 'outline' | 'glass';
+  /** 卡片边框宽度（px），默认 1 */
+  borderWidth?: number;
+  /** 是否在卡片顶部显示主色强调条 */
+  accentBar?: boolean;
+}
+
+/** 导航栏样式 */
+export interface ThemeNavStyle {
+  /** flat 扁平 / glass 毛玻璃 / solid 实色 / minimal 无边框 */
+  style?: 'flat' | 'glass' | 'solid' | 'minimal';
+  /** 导航栏最小高度（px），默认随内容自适应 */
+  height?: number;
+  /** 是否显示品牌图标 */
+  showIcon?: boolean;
 }
 
 export interface ThemeVariant {
@@ -80,8 +121,12 @@ export const SHADOW_PRESETS: Record<0 | 1 | 2 | 3, { light: string; dark: string
 export const BUILTIN_THEME_PACKS: ThemePack[] = [
   {
     id: 'ink-default',
+    category: '综合',
     name: '素墨',
     builtin: true,
+    brand: { icon: '🖋️', name: '智简匣', tagline: '本地离线 AI 工具箱' },
+    card: { style: 'elevated', borderWidth: 1 },
+    nav: { style: 'flat', showIcon: true },
     light: {
       accent: '#4f6bed',
       accentSoft: '#eef1fe',
@@ -111,8 +156,12 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
   },
   {
     id: 'moss',
+    category: '配色',
     name: '青苔',
     builtin: true,
+    brand: { icon: '🌿', name: '智简匣', tagline: '本地离线 AI 工具箱' },
+    card: { style: 'elevated', borderWidth: 1, accentBar: true },
+    nav: { style: 'flat', showIcon: true },
     light: {
       accent: '#0f9d76',
       accentSoft: '#e4f6f0',
@@ -142,8 +191,12 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
   },
   {
     id: 'amber-dusk',
+    category: '配色',
     name: '暮橙',
     builtin: true,
+    brand: { icon: '🌇', name: '智简匣', tagline: '本地离线 AI 工具箱' },
+    card: { style: 'flat', borderWidth: 1 },
+    nav: { style: 'solid', showIcon: true },
     light: {
       accent: '#e0761a',
       accentSoft: '#fdf0e3',
@@ -173,8 +226,12 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
   },
   {
     id: 'violet-night',
+    category: '综合',
     name: '夜堇',
     builtin: true,
+    brand: { icon: '🌙', name: '智简匣', tagline: '本地离线 AI 工具箱' },
+    card: { style: 'glass', borderWidth: 1 },
+    nav: { style: 'glass', showIcon: true },
     light: {
       accent: '#8b5cf6',
       accentSoft: '#f1ebfe',
@@ -204,8 +261,12 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
   },
   {
     id: 'mono-flat',
+    category: '卡片',
     name: '纯白',
     builtin: true,
+    brand: { icon: '⬜', name: '智简匣', tagline: '本地离线 AI 工具箱' },
+    card: { style: 'outline', borderWidth: 1 },
+    nav: { style: 'minimal', showIcon: true },
     light: {
       accent: '#17191d',
       accentSoft: '#eef0f2',
@@ -239,3 +300,35 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
 export const THEME_STORAGE_KEY = 'zj-theme-packs';
 export const ACTIVE_THEME_KEY = 'zj-active-theme';
 export const THEME_MODE_KEY = 'zj-theme-mode';
+
+/** 主题包缺省的品牌 / 卡片 / 导航栏配置 */
+export const DEFAULT_THEME_BRAND: ThemeBrand = {
+  icon: '📦',
+  name: '智简匣',
+  tagline: '本地离线 AI 工具箱',
+};
+
+export const DEFAULT_THEME_CARD: Required<ThemeCardStyle> = {
+  style: 'elevated',
+  borderWidth: 1,
+  accentBar: false,
+};
+
+export const DEFAULT_THEME_NAV: Required<ThemeNavStyle> = {
+  style: 'flat',
+  height: 0,
+  showIcon: true,
+};
+
+/**
+ * 归一化主题包：补齐缺失的品牌 / 卡片 / 导航栏配置。
+ * 外部制作的 .theme 可能只写了配色，其余字段按默认值补全。
+ */
+export function normalizeThemePack(pack: ThemePack): ThemePack {
+  return {
+    ...pack,
+    brand: { ...DEFAULT_THEME_BRAND, ...(pack.brand ?? {}) },
+    card: { ...DEFAULT_THEME_CARD, ...(pack.card ?? {}) },
+    nav: { ...DEFAULT_THEME_NAV, ...(pack.nav ?? {}) },
+  };
+}

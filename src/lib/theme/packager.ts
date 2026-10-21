@@ -24,16 +24,30 @@
  *                "border": "#e6e8ec", "radius": 16, "shadow": 2 },
  *     "dark":  { "...": "同上" },
  *     "wallpaper": { "light": { "kind": "gradient", "gradient": "linear-gradient(...)", "veil": 0.9 },
- *                    "dark":  { "kind": "none", "veil": 1 } }
+ *                    "dark":  { "kind": "none", "veil": 1 } },
+ *     "brand": { "icon": "🎨", "name": "我的应用", "tagline": "副标题" },
+ *     "card":  { "style": "glass", "borderWidth": 1, "accentBar": true },
+ *     "nav":   { "style": "glass", "height": 56, "showIcon": true }
  *   }
  * }
  * ```
+ *
+ * brand / card / nav 三段均为**可选**：缺省时前端按默认值补全，
+ * 因此旧版主题包（只写配色）依然可以正常导入。
  *
  * 校验规则与后端 `server/src/routes/registry-validate.js` 保持一致，
  * 保证「外部制作的包」与「后端仓库存的包」能互相识别。
  */
 
-import type { ThemePack, ThemeVariant, WallpaperRef } from './types';
+import {
+  normalizeThemePack,
+  type ThemePack,
+  type ThemeVariant,
+  type WallpaperRef,
+  type ThemeBrand,
+  type ThemeCardStyle,
+  type ThemeNavStyle,
+} from './types';
 
 /** 主题包文件格式标识 */
 export const THEME_FORMAT = 'zhijianxia.theme';
@@ -50,6 +64,8 @@ export interface ThemeManifest {
   author?: string;
   preview?: string;
   tags?: string[];
+  /** 主题分类：综合 / 配色 / 卡片 / 导航栏 / 壁纸 / 图标 */
+  category?: string;
 }
 
 /** 主题包信封 */
@@ -122,6 +138,67 @@ export function isValidWallpaper(value: unknown): value is WallpaperRef {
   return true;
 }
 
+/** 卡片风格枚举 */
+export const CARD_STYLES = ['flat', 'elevated', 'outline', 'glass'] as const;
+/** 导航栏风格枚举 */
+export const NAV_STYLES = ['flat', 'glass', 'solid', 'minimal'] as const;
+
+/** 校验品牌段（可选） */
+export function isValidBrand(value: unknown): value is ThemeBrand {
+  if (!value || typeof value !== 'object') return false;
+  const b = value as Record<string, unknown>;
+  if (b.icon !== undefined && typeof b.icon !== 'string') return false;
+  if (b.name !== undefined && typeof b.name !== 'string') return false;
+  if (b.tagline !== undefined && typeof b.tagline !== 'string') return false;
+  return true;
+}
+
+/** 校验卡片段（可选） */
+export function isValidCard(value: unknown): value is ThemeCardStyle {
+  if (!value || typeof value !== 'object') return false;
+  const c = value as Record<string, unknown>;
+  if (c.style !== undefined && !CARD_STYLES.includes(c.style as never)) {
+    return false;
+  }
+  if (c.borderWidth !== undefined) {
+    if (
+      typeof c.borderWidth !== 'number' ||
+      !Number.isFinite(c.borderWidth) ||
+      c.borderWidth < 0 ||
+      c.borderWidth > 6
+    ) {
+      return false;
+    }
+  }
+  if (c.accentBar !== undefined && typeof c.accentBar !== 'boolean') {
+    return false;
+  }
+  return true;
+}
+
+/** 校验导航栏段（可选） */
+export function isValidNav(value: unknown): value is ThemeNavStyle {
+  if (!value || typeof value !== 'object') return false;
+  const n = value as Record<string, unknown>;
+  if (n.style !== undefined && !NAV_STYLES.includes(n.style as never)) {
+    return false;
+  }
+  if (n.height !== undefined) {
+    if (
+      typeof n.height !== 'number' ||
+      !Number.isFinite(n.height) ||
+      n.height < 0 ||
+      n.height > 200
+    ) {
+      return false;
+    }
+  }
+  if (n.showIcon !== undefined && typeof n.showIcon !== 'boolean') {
+    return false;
+  }
+  return true;
+}
+
 /**
  * 校验主题包信封。
  * 返回中文错误原因，调用方可直接展示给用户。
@@ -191,6 +268,17 @@ export function validateThemePackage(
     }
   }
 
+  // ---- 可选定制段：品牌 / 卡片 / 导航栏 ----
+  if (pack.brand !== undefined && !isValidBrand(pack.brand)) {
+    return { ok: false, error: '主题包 brand（品牌）段格式不正确' };
+  }
+  if (pack.card !== undefined && !isValidCard(pack.card)) {
+    return { ok: false, error: '主题包 card（卡片样式）段格式不正确' };
+  }
+  if (pack.nav !== undefined && !isValidNav(pack.nav)) {
+    return { ok: false, error: '主题包 nav（导航栏样式）段格式不正确' };
+  }
+
   return { ok: true, value: value as ThemePackage };
 }
 
@@ -210,6 +298,7 @@ export function createThemePackage(
       author: '',
       preview: '🎨',
       tags: [],
+      category: pack.category ?? '综合',
       ...manifest,
     },
     pack: {
@@ -282,10 +371,11 @@ export async function readThemePackageFile(
 
 /** 从信封中取出可应用的主题定义 */
 export function themePackOf(pkg: ThemePackage): ThemePack {
-  return {
+  return normalizeThemePack({
     ...pkg.pack,
     id: pkg.manifest.id,
     name: pkg.manifest.name,
+    category: pkg.manifest.category ?? pkg.pack.category ?? '综合',
     builtin: false,
-  };
+  });
 }

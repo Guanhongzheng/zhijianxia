@@ -120,6 +120,7 @@ const SCHEMA = [
      id          TEXT    PRIMARY KEY,
      name        TEXT    NOT NULL,
      version     TEXT    NOT NULL DEFAULT '1.0.0',
+     category    TEXT    NOT NULL DEFAULT '通用',
      description TEXT    NOT NULL DEFAULT '',
      author      TEXT    NOT NULL DEFAULT '',
      preview     TEXT    NOT NULL DEFAULT '🎨',
@@ -141,6 +142,47 @@ const SCHEMA = [
 /** 建表（幂等） */
 function createSchema() {
   for (const sql of SCHEMA) run(sql);
+  migrateSchema();
+}
+
+/**
+ * 增量迁移：为已存在的库补齐后加的列。
+ * SQLite 不支持 ADD COLUMN IF NOT EXISTS，这里先查列再决定是否 ALTER。
+ */
+function migrateSchema() {
+  /** 补齐一列（若不存在） */
+  const ensureColumn = (table, column, ddl) => {
+    const cols = all(`PRAGMA table_info(${table})`);
+    if (cols.some((c) => c.name === column)) return false;
+    run(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+    return true;
+  };
+
+  // 主题包新增分类字段（用于广场中的主题分类筛选）
+  ensureColumn('theme_packages', 'category', "TEXT NOT NULL DEFAULT '综合'");
+
+  // 历史数据清洗：旧库的分类默认值是「通用」，统一为「综合」
+  run("UPDATE theme_packages SET category = '综合' WHERE category IS NULL OR category = '' OR category = '通用'");
+
+  // 旧主题包补齐 brand / card / nav 三段（缺失时按内置主题的默认值填充）
+  const rows = all('SELECT id, pack_json FROM theme_packages');
+  for (const row of rows) {
+    let pack;
+    try {
+      pack = JSON.parse(row.pack_json);
+    } catch {
+      continue;
+    }
+    if (!pack || typeof pack !== 'object') continue;
+    if (pack.brand && pack.card && pack.nav) continue;
+
+    const seed = THEME_PACK_SEEDS.find((s) => s.id === row.id);
+    pack.brand = pack.brand ?? seed?.brand ?? { icon: '📦', name: '智简匣', tagline: '本地离线 AI 工具箱' };
+    pack.card = pack.card ?? seed?.card ?? { style: 'elevated', borderWidth: 1 };
+    pack.nav = pack.nav ?? seed?.nav ?? { style: 'flat', showIcon: true };
+    pack.category = pack.category ?? seed?.category ?? '综合';
+    run('UPDATE theme_packages SET pack_json = ?, category = ? WHERE id = ?', JSON.stringify(pack), pack.category, row.id);
+  }
 }
 
 /**
@@ -157,6 +199,10 @@ const THEME_PACK_SEEDS = [
     author: '智简匣',
     preview: '🖋️',
     tags: ['默认', '靛蓝', '简约'],
+    category: '综合',
+    brand: { icon: '🖋️', name: '智简匣', tagline: '本地离线 AI 工具箱' },
+    card: { style: 'elevated', borderWidth: 1 },
+    nav: { style: 'flat', showIcon: true },
     light: {
       accent: '#4f6bed',
       accentSoft: '#eef1fe',
@@ -192,6 +238,10 @@ const THEME_PACK_SEEDS = [
     author: '智简匣',
     preview: '🌿',
     tags: ['自然', '绿色', '护眼'],
+    category: '配色',
+    brand: { icon: '🌿', name: '智简匣', tagline: '本地离线 AI 工具箱' },
+    card: { style: 'elevated', borderWidth: 1, accentBar: true },
+    nav: { style: 'flat', showIcon: true },
     light: {
       accent: '#0f9d76',
       accentSoft: '#e4f6f0',
@@ -227,6 +277,10 @@ const THEME_PACK_SEEDS = [
     author: '智简匣',
     preview: '🌙',
     tags: ['暗色', '紫色', '夜间'],
+    category: '综合',
+    brand: { icon: '🌙', name: '智简匣', tagline: '本地离线 AI 工具箱' },
+    card: { style: 'glass', borderWidth: 1 },
+    nav: { style: 'glass', showIcon: true },
     light: {
       accent: '#8b5cf6',
       accentSoft: '#f1ebfe',
@@ -342,11 +396,12 @@ function seedThemePackages() {
 
     run(
       `INSERT INTO theme_packages
-         (id, name, version, description, author, preview, tags, pack_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, name, version, category, description, author, preview, tags, pack_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       pack.id,
       pack.name,
       pack.version,
+      check.data.category,
       pack.description,
       pack.author,
       pack.preview,

@@ -1,11 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Package, Search, Store } from 'lucide-react';
+import { Package, Palette, Search, Store } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePluginStore } from '@/store/plugin-store';
 import { useAppStore } from '@/store/app-store';
+import { useThemeStore } from '@/store/theme-store';
 
 /**
  * 功能广场卡片 —— 展示插件安装概况与快捷入口。
@@ -16,6 +17,7 @@ export function MarketplaceCard() {
   const installed = usePluginStore((s) => s.installed);
   const loading = usePluginStore((s) => s.loading);
   const openCard = useAppStore((s) => s.openCard);
+  const themeCount = useThemeStore((s) => s.packs.length);
 
   const installedCount = installed.length;
   const total = modules.length;
@@ -45,15 +47,20 @@ export function MarketplaceCard() {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">功能广场</p>
         <p className="mt-0.5 text-xs leading-relaxed text-[var(--zj-muted-fg)]">
-          搜索、筛选、安装与卸载插件
+          搜索、筛选、安装与卸载插件，也可下载主题包
         </p>
       </div>
 
       {/* 快捷入口 */}
-      <div className="flex w-full items-center gap-1.5 border-t border-[var(--zj-border)] pt-2.5">
+      <div className="flex w-full flex-wrap items-center gap-1.5 border-t border-[var(--zj-border)] pt-2.5">
         <span className="flex items-center gap-1 text-[0.75rem] text-[var(--zj-muted-fg)]">
           <Search className="size-3" />
           搜索
+        </span>
+        <span className="text-[0.75rem] text-[var(--zj-muted-fg)]">·</span>
+        <span className="flex items-center gap-1 text-[0.75rem] text-[var(--zj-muted-fg)]">
+          <Palette className="size-3" />
+          主题 {themeCount}
         </span>
         <span className="text-[0.75rem] text-[var(--zj-muted-fg)]">·</span>
         <span className="flex items-center gap-1 text-[0.75rem] text-[var(--zj-muted-fg)]">

@@ -235,6 +235,67 @@ body {
   border-radius: var(--zj-radius);
 }
 
+/* ============================================================
+   主题包可定制：卡片风格 / 导航栏风格
+   由 <html data-card-style> 与 <html data-nav-style> 驱动
+   ============================================================ */
+
+/* 卡片风格 */
+html[data-card-style='flat'] .zj-card {
+  box-shadow: none;
+}
+
+html[data-card-style='outline'] .zj-card {
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html[data-card-style='glass'] .zj-card {
+  background-color: color-mix(in srgb, var(--zj-card) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+/* 卡片边框宽度（0 = 无边框） */
+html[data-card-border-width='0'] .zj-card {
+  border-width: 0;
+}
+
+/* 卡片顶部主色强调条 */
+html[data-card-accent-bar='1'] .zj-card {
+  box-shadow: inset 0 3px 0 var(--zj-accent);
+}
+
+html[data-card-accent-bar='1'][data-card-style='elevated'] .zj-card {
+  box-shadow:
+    inset 0 3px 0 var(--zj-accent),
+    var(--zj-shadow);
+}
+
+/* 导航栏风格 */
+.zj-nav {
+  transition:
+    background-color 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+}
+
+html[data-nav-style='solid'] .zj-nav {
+  background-color: var(--zj-card);
+}
+
+html[data-nav-style='glass'] .zj-nav {
+  background-color: color-mix(in srgb, var(--zj-card) 68%, transparent);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+
+html[data-nav-style='minimal'] .zj-nav {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
 /* 骨架屏统一动画 */
 .zj-skeleton {
   position: relative;

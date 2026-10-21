@@ -32,6 +32,7 @@ import {
   type RegistryTheme,
 } from '@/lib/backend/registry';
 import { cacheTheme, removeCachedTheme } from '@/lib/registry-cache';
+import { ThemeCustomizer } from '@/components/cards/theme-customizer';
 import { cn } from '@/lib/utils';
 
 /**
@@ -414,6 +415,11 @@ export function PersonalizationSettings() {
           </div>
         )}
       </section>
+
+      <Separator />
+
+      {/* 主题定制：图标 / 卡片 / 导航栏 / 配色 / 壁纸 */}
+      <ThemeCustomizer />
 
       <Separator />
 

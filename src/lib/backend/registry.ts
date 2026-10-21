@@ -36,6 +36,7 @@ export interface RegistryTheme {
   id: string;
   name: string;
   version: string;
+  category: string;
   description: string;
   author: string;
   preview: string;
