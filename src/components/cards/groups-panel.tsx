@@ -201,18 +201,32 @@ function GroupChatView({
             | undefined;
           if (!payload || payload.scope !== 'group') return;
           if (payload.target !== group.groupId) return;
+          const body = payload.body ?? '';
+          const senderUid = payload.senderUid ?? '';
+          const createdAt = Number(payload.createdAt ?? Date.now());
+          // 服务端现已下发真实自增 id；老服务端没有 id 时退回时间戳占位
+          const messageId = Number(payload.id ?? createdAt);
           setMessages((prev) => {
-            // 避免与服务端广播 + 历史拉取重复
-            if (prev.some((m) => m.id === payload.id)) return prev;
+            // 避免与历史拉取重复：新旧后端都要能去重
+            const dup = prev.some(
+              (m) =>
+                (payload.id !== undefined && m.id === messageId) ||
+                // 回退匹配：同一发送者 + 同一时间戳 + 同一内容
+                (payload.id === undefined &&
+                  Number(m.createdAt) === createdAt &&
+                  m.senderUid === senderUid &&
+                  m.body === body)
+            );
+            if (dup) return prev;
             return [
               ...prev,
               {
-                id: Number(payload.createdAt ?? Date.now()),
+                id: messageId,
                 scope: 'group',
                 target: group.groupId,
-                senderUid: payload.senderUid ?? '',
-                body: payload.body ?? '',
-                createdAt: payload.createdAt ?? Date.now(),
+                senderUid,
+                body,
+                createdAt,
               },
             ];
           });
@@ -228,7 +242,9 @@ function GroupChatView({
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [group.groupId, lan, token, user]);
+    // 依赖 user.uid 而非 user 对象：user 是对象引用，任何 store 更新都会
+    // 触发重连并清空消息列表
+  }, [group.groupId, lan, token, user?.uid]);
 
   // 滚动到底部
   useEffect(() => {
@@ -341,12 +357,13 @@ function GroupChatView({
             还没有消息，说点什么吧
           </p>
         ) : (
-          messages.map((m) => {
+          messages.map((m, index) => {
             const mine = m.senderUid === user?.uid;
             const isAi = m.body.startsWith('[AI]');
             return (
               <div
-                key={`${m.id}-${m.senderUid}`}
+                // 追加型列表，掺入 index 兜底，避免极端情况下重复 id 触发 key 冲突
+                key={`${m.id}-${m.senderUid}-${index}`}
                 className={`flex gap-2.5 ${mine ? 'flex-row-reverse' : ''}`}
               >
                 <Avatar className="size-7 shrink-0">

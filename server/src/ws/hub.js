@@ -206,22 +206,26 @@ class Hub {
     }
 
     const createdAt = Date.now();
-    // 先落库
-    run(
+    const normalizedTarget = target.toUpperCase();
+    // 先落库 —— 拿到自增 id，广播时一并下发
+    const inserted = run(
       'INSERT INTO messages (scope, target, sender_uid, body, created_at) VALUES (?, ?, ?, ?, ?)',
       scope,
-      scope === 'direct' ? target.toUpperCase() : target.toUpperCase(),
+      normalizedTarget,
       senderUid,
       body,
       createdAt
     );
+    const messageId = Number(inserted?.lastInsertRowid ?? createdAt);
 
-    // 再广播
+    // 再广播（带id，前端据此去重；此前广播无 id，前端只能拿 createdAt 冒充，
+    // 导致「历史消息 id vs 时间戳」混用，去重逻辑恒不命中 → 消息重复渲染）
     const payload = {
       type: 'message',
       payload: {
+        id: messageId,
         scope,
-        target: scope === 'direct' ? target.toUpperCase() : target.toUpperCase(),
+        target: normalizedTarget,
         senderUid,
         body,
         createdAt,

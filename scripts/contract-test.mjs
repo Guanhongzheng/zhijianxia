@@ -3,6 +3,8 @@
  * 直接打后端，断言「后端真实返回结构」与「前端适配层期望结构」一致。
  * 这是本次崩溃（avatarColor 读取 undefined.length）的根因防线。
  */
+import { readFileSync } from 'node:fs';
+
 const BASE = process.env.ZJ_API || 'http://localhost:8787';
 
 const results = [];
@@ -243,6 +245,18 @@ async function req(path, { method = 'GET', body, token } = {}) {
     aiChat.status !== 401,
     'POST /api/ai/chat 鉴权通过（无 Key 时应为 400/502 而非 401）',
     `status=${aiChat.status}`,
+  );
+
+  // 群聊 WS 广播必须带真实自增 id —— 前端靠它去重，
+  // 缺失会导致前端拿 createdAt 冒充 id，React key 冲突 + 消息重复
+  const hubSrc = readFileSync(
+    new URL('../server/src/ws/hub.js', import.meta.url),
+    'utf8'
+  );
+  check(
+    /id:\s*messageId/.test(hubSrc) && /lastInsertRowid/.test(hubSrc),
+    '群聊 WS 广播 payload 带数据库自增 id（前端据此去重，避免 key 冲突）',
+    'hub.js 含 id: messageId + lastInsertRowid'
   );
 
   // 清理
