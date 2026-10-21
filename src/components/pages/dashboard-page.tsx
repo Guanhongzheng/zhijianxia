@@ -47,9 +47,9 @@ export function DashboardPage({ active }: { active: boolean }) {
 
       {/* 卡片区：按内容自适应高度，不强制铺满 */}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
-        <div className="mx-auto grid w-full max-w-6xl items-start gap-4 lg:grid-cols-3">
-          {/* 左列：好友 / 群聊（方形） + 系统设置（长方形） */}
-          <div className="flex flex-col gap-4">
+        <div className="mx-auto grid w-full max-w-6xl items-stretch gap-4 lg:grid-cols-3">
+          {/* 左列：好友（左）+ 群聊（右）并排方形，下方跟随系统设置（长方形） */}
+          <div className="grid h-full grid-cols-2 grid-rows-[auto_1fr] gap-4">
             {/* 好友卡片 */}
             <EntryCard
               square
@@ -78,8 +78,9 @@ export function DashboardPage({ active }: { active: boolean }) {
               }}
             />
 
-            {/* 系统设置卡片（长方形） */}
+            {/* 系统设置卡片（长方形，横跨两列） */}
             <EntryCard
+              className="col-span-2"
               icon={<Settings className="size-4" />}
               title="系统设置"
               desc="AI 引擎、局域网连接与通用设置"
@@ -88,33 +89,37 @@ export function DashboardPage({ active }: { active: boolean }) {
           </div>
 
           {/* 中列：公告（与功能广场同样大小的方形卡片） */}
-          <div className="aspect-square min-h-0">
-            <CardShell
-              className="flex h-full flex-col"
-              icon={<Megaphone className="size-4" />}
-              title="公告"
-              desc="更新日志与新增功能公告"
-              action={
-                isAdmin ? (
-                  <button
-                    type="button"
-                    onClick={() => openCard('announcements')}
-                    className="text-xs text-[var(--zj-accent)] transition-opacity hover:opacity-70"
-                  >
-                    管理
-                  </button>
-                ) : null
-              }
-            >
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <AnnouncementsCard />
-              </div>
-            </CardShell>
+          <div className="flex min-h-0">
+            <div className="aspect-square w-full min-h-0">
+              <CardShell
+                className="flex h-full flex-col"
+                icon={<Megaphone className="size-4" />}
+                title="公告"
+                desc="更新日志与新增功能公告"
+                action={
+                  isAdmin ? (
+                    <button
+                      type="button"
+                      onClick={() => openCard('announcements')}
+                      className="text-xs text-[var(--zj-accent)] transition-opacity hover:opacity-70"
+                    >
+                      管理
+                    </button>
+                  ) : null
+                }
+              >
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <AnnouncementsCard />
+                </div>
+              </CardShell>
+            </div>
           </div>
 
           {/* 右列：功能广场（正方形卡片） */}
-          <div className="aspect-square min-h-0">
-            <MarketplaceCard className="h-full" />
+          <div className="flex min-h-0">
+            <div className="aspect-square w-full min-h-0">
+              <MarketplaceCard className="h-full" />
+            </div>
           </div>
         </div>
       </div>
@@ -164,6 +169,7 @@ function EntryCard({
   requiresBackend = false,
   logged = true,
   square = false,
+  className,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -173,6 +179,7 @@ function EntryCard({
   logged?: boolean;
   /** 方形卡片：与相邻列的方形卡片对齐 */
   square?: boolean;
+  className?: string;
 }) {
   const backendOnline = useAppStore((s) => s.backendOnline);
   const offline = requiresBackend && (!backendOnline || !logged);
@@ -187,6 +194,7 @@ function EntryCard({
       className={cn(
         'zj-card flex flex-col items-start gap-2.5 p-5 text-left transition-colors hover:border-[var(--zj-accent)]',
         square && 'aspect-square justify-between',
+        className,
       )}
     >
       <div className="flex w-full items-center justify-between">

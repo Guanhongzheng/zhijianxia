@@ -31,7 +31,7 @@ export function MarketplaceCard({ className }: { className?: string }) {
       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
       onClick={() => openCard('marketplace')}
       className={cn(
-        'zj-card flex h-full flex-col items-start gap-3 p-5 text-left transition-colors hover:border-[var(--zj-accent)]',
+        'zj-card flex h-full w-full flex-col items-start gap-3 p-5 text-left transition-colors hover:border-[var(--zj-accent)]',
         className,
       )}
     >

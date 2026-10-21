@@ -161,6 +161,75 @@ function log(ok, name, extra = '') {
       '第 2 页不再展示「我的插件」卡片',
     );
 
+    // 仪表盘三列布局：左列好友（左）+群聊（右）并排、设置在下方，且与公告/广场对齐
+    const dashLayout = await page.evaluate(() => {
+      const root = document.querySelectorAll('.zj-snap-section')[1];
+      const find = (title) =>
+        Array.from(root.querySelectorAll('.zj-card')).find(
+          (c) =>
+            c.querySelector('p.text-sm.font-medium')?.textContent.trim() === title,
+        );
+      const box = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          x: Math.round(r.x),
+          y: Math.round(r.y),
+          w: Math.round(r.width),
+          h: Math.round(r.height),
+          bottom: Math.round(r.bottom),
+        };
+      };
+      return {
+        friend: box(find('好友')),
+        group: box(find('群聊')),
+        settings: box(find('系统设置')),
+        notice: box(find('公告')),
+        market: box(find('功能广场')),
+      };
+    });
+    log(
+      !!dashLayout.friend &&
+        !!dashLayout.group &&
+        !!dashLayout.settings &&
+        !!dashLayout.notice &&
+        !!dashLayout.market,
+      '仪表盘布局要素齐备（好友/群聊/设置/公告/功能广场）',
+    );
+    log(
+      !!dashLayout.friend &&
+        !!dashLayout.group &&
+        dashLayout.friend.x < dashLayout.group.x &&
+        Math.abs(dashLayout.friend.y - dashLayout.group.y) < 4 &&
+        dashLayout.friend.h === dashLayout.group.h,
+      '好友在左、群聊在右并排（同高方形）',
+      dashLayout.friend && dashLayout.group
+        ? `好友 x=${dashLayout.friend.x} / 群聊 x=${dashLayout.group.x}，高 ${dashLayout.friend.h}`
+        : '',
+    );
+    log(
+      !!dashLayout.settings &&
+        !!dashLayout.group &&
+        dashLayout.settings.y > dashLayout.group.y &&
+        dashLayout.settings.w > dashLayout.group.w,
+      '系统设置位于好友/群聊下方并横跨左列两格',
+      dashLayout.settings && dashLayout.group
+        ? `设置 y=${dashLayout.settings.y} 宽 ${dashLayout.settings.w} / 群聊底 ${dashLayout.group.bottom}`
+        : '',
+    );
+    log(
+      !!dashLayout.settings &&
+        !!dashLayout.notice &&
+        !!dashLayout.market &&
+        Math.abs(dashLayout.settings.bottom - dashLayout.notice.bottom) < 6 &&
+        Math.abs(dashLayout.notice.bottom - dashLayout.market.bottom) < 6 &&
+        dashLayout.notice.w === dashLayout.market.w,
+      '左列与公告、功能广场底边对齐（两列等宽方形）',
+      dashLayout.settings && dashLayout.notice && dashLayout.market
+        ? `设置底 ${dashLayout.settings.bottom} / 公告底 ${dashLayout.notice.bottom} / 广场底 ${dashLayout.market.bottom}`
+        : '',
+    );
+
     // 启动插件位于底部导航栏，不占用卡片位
     const cornerStart = await page.$$eval(
       '.zj-snap-section:nth-child(2) footer button',
