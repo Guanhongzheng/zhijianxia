@@ -323,9 +323,18 @@ async function req(path, { method = 'GET', body, token } = {}) {
   // 底层有时抛裸数字/裸对象，describeError 必须如实展开而非丢弃
   check(
     /describeNonError/.test(engineSrc) &&
-      /底层库抛出了未包装的错误码/.test(engineSrc),
+      /底层抛出了未包装的错误值/.test(engineSrc),
     'describeError 能处理非 Error 值（裸数字/裸对象）',
     'describeNonError 已实现'
+  );
+
+  // 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session。
+  // 必须在加载模型前做冒烟测试，否则会在下载完权重后才炸出裸数字。
+  check(
+    /smokeTestWebGpu/.test(rtSrc2) &&
+      /resolveRuntime\(\s*undefined,\s*false,\s*true\s*\)/.test(engineSrc),
+    '加载模型前执行 WebGPU 冒烟测试（deep=true）',
+    '冒烟测试已接入加载流程'
   );
 
   // 清理

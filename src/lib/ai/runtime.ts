@@ -138,20 +138,124 @@ async function probeWebGpu(): Promise<{
 }
 
 /**
+ * WebGPU 冒烟测试：在适配器上真正跑一次 GPU 计算负载。
+ *
+ * ## 为什么必须做这一步
+ *
+ * `requestAdapter()` + `requestDevice()` 成功**不代表** ONNX Runtime 的
+ * WebGPU 执行后端（WebGpuBackend）能真正建起 session。实测中遇到过：
+ * 探测全部通过，但加载模型时WebGPU 初始化失败，且 ONNX Runtime
+ * 抛出的**不是 Error 实例而是一个裸数字**（如 999335224 / 1888206176），
+ * 每次还不一样 —— 那是 wasm 侧未初始化的内存/句柄值，不是可读错误码。
+ *
+ * 典型触发条件：驱动版本与浏览器 WebGPU 实现不匹配、
+ * 沙箱/远程桌面环境、GPU 被其他进程独占、安全策略限制等。
+ *
+ * 这里用一次最小计算（buffer 写入 + 回读）验证 GPU 队列真能工作，
+ * 比等到下载完几百MB 权重才发现不能用要划算得多。
+ */
+async function smokeTestWebGpu(): Promise<{ ok: boolean; reason?: string }> {
+  type GpuBuffer = {
+    getMappedRange: () => ArrayBuffer;
+    unmap: () => void;
+    mapAsync: (mode: number) => Promise<void>;
+    destroy: () => void;
+  };
+  type GpuDevice = {
+    createBuffer: (d: { size: number; usage: number }) => GpuBuffer;
+    queue: { writeBuffer: (b: unknown, o: number, d: ArrayBufferView) => void };
+    addEventListener?: (type: string, cb: (e: unknown) => void) => void;
+    destroy: () => void;
+  };
+
+  try {
+    const adapter = await (
+      navigator as Navigator & {
+        gpu: { requestAdapter: () => Promise<{ requestDevice: () => Promise<GpuDevice> } | null> };
+      }
+    ).gpu.requestAdapter();
+
+    if (!adapter) return { ok: false, reason: '无法获取 GPU 适配器' };
+
+    const device = await adapter.requestDevice();
+    // 允许驱动把校验错误异步抛到 uncapturederror，而不是让探测直接失败
+    let asyncError: string | undefined;
+    device.addEventListener?.('uncapturederror', (e: unknown) => {
+      const msg =
+        (e as { error?: { message?: string } })?.error?.message ??
+        '未知 WebGPU 错误';
+      asyncError ??= String(msg);
+    });
+
+    // 最小往返：4 字节写入再映射回读，验证队列与缓冲都正常
+    const buffer = device.createBuffer({
+      size: 4,
+      usage: 0x0008 | 0x0001, // COPY_DST | MAP_READ
+    });
+    device.queue.writeBuffer(buffer, 0, new Uint32Array([1]));
+    await buffer.mapAsync(1); // MAP_READ
+    const value = new Uint32Array(buffer.getMappedRange())[0];
+    buffer.unmap();
+    buffer.destroy();
+    device.destroy();
+
+    if (asyncError) return { ok: false, reason: asyncError };
+    if (value !== 1) {
+      return { ok: false, reason: 'GPU 计算结果不正确' };
+    }
+    return { ok: true };
+  } catch (err) {
+    // 注意：这里的错误同样可能是裸数字
+    return {
+      ok: false,
+      reason: `WebGPU 冒烟测试失败（${describeRaw(err)}）`,
+    };
+  }
+}
+
+/** 把任意（含裸数字的）错误值转成可读文本 */
+function describeRaw(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'number') {
+    return `底层抛出未包装的错误码 ${err}`;
+  }
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err)?.slice(0, 120) ?? String(err);
+  } catch {
+    return String(err);
+  }
+}
+
+/**
  * 解析出本次推理使用的运行时。
  *
  * @param pref 用户偏好；不传则读localStorage
  * @param force 若为 true 则忽略缓存，强制重新探测（用户手动切换时用）
+ * @param deep 是否执行 WebGPU 冒烟测试。加载模型前应传 true，
+ *             仅在设置面板展示概览时可传 false 以免拖慢渲染。
  */
 export async function resolveRuntime(
   pref?: RuntimePref,
   force = false,
+  deep = false,
 ): Promise<RuntimeInfo> {
   if (cached && !force && pref === undefined) return cached;
 
   const effectivePref = pref ?? readRuntimePref();
   const probe = await probeWebGpu();
-  const webgpuUsable = probe.hasWebGpuApi && probe.hasWebGpuAdapter;
+  let webgpuUsable = probe.hasWebGpuApi && probe.hasWebGpuAdapter;
+  let smokeReason: string | undefined;
+
+  // 只有真正要加载模型时才做冒烟测试：
+  // 能建device ≠ 能建 ORT session，不测就会在下载完权重后才炸
+  if (webgpuUsable && deep) {
+    const smoke = await smokeTestWebGpu();
+    if (!smoke.ok) {
+      webgpuUsable = false;
+      smokeReason = smoke.reason;
+    }
+  }
 
   let device: RuntimeDevice;
   let dtype: RuntimeDtype;
@@ -167,8 +271,8 @@ export async function resolveRuntime(
       device = 'wasm';
       dtype = 'q4';
       fallbackReason = probe.hasWebGpuApi
-        ? '浏览器暴露了 WebGPU 接口，但未能获取到可用的 GPU 适配器'
-        : '当前浏览器不支持 WebGPU';
+        ? `WebGPU 不可用（${smokeReason ?? '未能获取可用的 GPU 适配器'}），已回退到 WASM`
+        : '当前浏览器不支持 WebGPU，已回退到 WASM';
     }
   } else if (effectivePref === 'wasm') {
     device = 'wasm';
@@ -177,6 +281,9 @@ export async function resolveRuntime(
     // auto：能用就用，WebGPU 通常比 WASM 快一个数量级
     device = webgpuUsable ? 'webgpu' : 'wasm';
     dtype = webgpuUsable ? 'q4f16' : 'q4';
+    if (!webgpuUsable && smokeReason) {
+      fallbackReason = `WebGPU 冒烟测试未通过（${smokeReason}），已使用 WASM`;
+    }
   }
 
   const info: RuntimeInfo = {

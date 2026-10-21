@@ -140,10 +140,15 @@ function describeNonError(err: unknown): string {
   }
 
   if (typeof err === 'number') {
+    // 实测：WebGPU 后端初始化失败时，ONNX Runtime 抛出的就是这个 ——
+    // 一个 wasm 侧未初始化的内存/句柄值（见过 1888206176、999335224 等），
+    // **每次都不一样**，因此它不是错误码，无法据此定位。
+    // 结合「运行时是 webgpu」这一上下文才能给出有意义的判断。
     return (
-      `底层库抛出了未包装的错误码 ${err}` +
-      `（该数值不是可读信息，通常出现在权重文件缺失或推理后端初始化失败时；` +
-      `请尝试在「设置 · AI 引擎」切换到 WASM 运行时，或换一个模型源后重试）`
+      `底层抛出了未包装的错误值 ${err}（该数值每次都不同，不是可读错误码）。` +
+      `这通常意味着推理后端初始化失败 —— 若当前使用 WebGPU，` +
+      `多半是该环境（驱动版本、远程桌面、GPU 独占或安全策略）无法真正运行 GPU 后端。` +
+      `请在「设置 · AI 引擎」改用 WASM 运行时；若已用 WASM 仍失败，则多为网络或权重下载问题`
     );
   }
 
@@ -392,8 +397,11 @@ export async function loadLocalModel(
   loadedModelId = modelId;
   const primary = findModelSource(readModelSource());
 
-  // 探测推理运行时（WebGPU 优先）
-  let runtime = await resolveRuntime();
+  // 探测推理运行时（WebGPU 优先）。
+  // deep=true：加载模型前做 WebGPU 冒烟测试。
+  // 必须做 —— 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session，
+  // 不测就会在下载完几百 MB 权重后才炸，而那时抛出的还是无法解读的裸数字。
+  let runtime = await resolveRuntime(undefined, false, true);
 
   emit({
     status: 'loading',
