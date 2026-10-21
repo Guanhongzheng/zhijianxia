@@ -66,6 +66,12 @@ export interface AppState {
   /** 当前打开的卡片弹窗 ID */
   activeCard: string | null;
   openCard: (id: string | null) => void;
+  /**
+   * 页面跳转信号 —— 由业务模块（如退出登录）触发，
+   * AppShell 监听后滚动到对应页。0 = 欢迎页，1 = 功能汇总页。
+   */
+  pageJump: { index: 0 | 1; token: number } | null;
+  jumpToPage: (index: 0 | 1) => void;
   /** 提示消息 */
   toast: { id: number; text: string; type: 'info' | 'success' | 'error' } | null;
   notify: (text: string, type?: 'info' | 'success' | 'error') => void;
@@ -173,6 +179,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ---- UI ----
   activeCard: null,
   openCard: (id) => set({ activeCard: id }),
+
+  pageJump: null,
+
+  jumpToPage: (index) => {
+    // 自增 token 保证连续跳转到同一页也能触发
+    set({ pageJump: { index, token: Date.now() } });
+  },
 
   toast: null,
   notify: (text, type = 'info') => {

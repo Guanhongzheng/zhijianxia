@@ -27,6 +27,7 @@ export function AppShell() {
   const themeLoading = useThemeStore((s) => s.loading);
   const activeCard = useAppStore((s) => s.activeCard);
   const openCard = useAppStore((s) => s.openCard);
+  const pageJump = useAppStore((s) => s.pageJump);
 
   /** 监听滚动位置，判断当前处于第几页 */
   useEffect(() => {
@@ -60,6 +61,15 @@ export function AppShell() {
     if (!el) return;
     el.scrollTo({ top: index * el.clientHeight, behavior: 'smooth' });
   }, []);
+
+  /**
+   * 响应外部的页面跳转请求（如退出登录后回到欢迎页）。
+   * 依赖 token 而非 index，确保连续跳转到同一页时也能触发。
+   */
+  useEffect(() => {
+    if (!pageJump) return;
+    scrollToPage(pageJump.index);
+  }, [pageJump?.token, scrollToPage]);
 
   return (
     <>

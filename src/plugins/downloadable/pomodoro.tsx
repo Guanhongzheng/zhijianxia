@@ -242,7 +242,7 @@ export function PomodoroCard({ ctx }: PluginComponentProps) {
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-3xl font-semibold tabular-nums">{formatClock(remaining)}</span>
-              <span className="mt-0.5 text-[11px] text-muted-foreground">
+              <span className="mt-0.5 text-[0.75rem] text-muted-foreground">
                 {phase === 'focus' ? '保持专注' : '放松一下'}
               </span>
             </div>
@@ -310,21 +310,21 @@ export function PomodoroCard({ ctx }: PluginComponentProps) {
                   key={`${item.task}-${index}`}
                   className="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/30 p-2.5"
                 >
-                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary">
+                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[0.6875rem] font-medium text-primary">
                     {index + 1}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium">{item.task}</p>
-                    {item.tip && <p className="mt-0.5 text-[10px] text-muted-foreground">{item.tip}</p>}
+                    {item.tip && <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">{item.tip}</p>}
                   </div>
-                  <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">
+                  <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[0.6875rem]">
                     {item.minutes} 分钟
                   </Badge>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="rounded-lg border border-dashed border-border/60 p-3 text-center text-[11px] text-muted-foreground">
+            <p className="rounded-lg border border-dashed border-border/60 p-3 text-center text-[0.75rem] text-muted-foreground">
               让 AI 帮你把大任务拆成可执行的小步骤
             </p>
           )}

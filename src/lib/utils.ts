@@ -35,10 +35,19 @@ export function readLocal<T>(key: string, fallback: T): T {
   }
 }
 
-/** 写入 localStorage（SSR 安全，失败静默） */
+/**
+ * 写入 localStorage（SSR 安全，失败静默）。
+ *
+ * 写入 null / undefined 时**删除该键**而非存字符串 "null"——
+ * 否则退出登录后令牌仍以 "null" 形式残留在本地存储里。
+ */
 export function writeLocal<T>(key: string, value: T) {
   if (typeof window === 'undefined') return;
   try {
+    if (value === null || value === undefined) {
+      window.localStorage.removeItem(key);
+      return;
+    }
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
     /* 存储配额不足时忽略 */

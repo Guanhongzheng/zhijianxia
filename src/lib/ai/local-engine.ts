@@ -4,6 +4,23 @@
  */
 
 import type { TextGenerationPipeline } from '@huggingface/transformers';
+import {
+  DEFAULT_LOCAL_MODEL,
+  findModelOption,
+  findModelSource,
+  inferFamily,
+  type ModelFamily,
+  type ModelSourceId,
+} from './local-models';
+
+export {
+  DEFAULT_LOCAL_MODEL,
+  LOCAL_MODEL_OPTIONS,
+  MODEL_SOURCES,
+  findModelOption,
+  findModelSource,
+} from './local-models';
+export type { ModelFamily, ModelSourceId } from './local-models';
 
 export type LocalAiStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -13,16 +30,18 @@ export interface LocalAiState {
   progress: number;
   /** 模型 id */
   modelId: string;
+  /** 当前使用的模型源（国内镜像 / 官方） */
+  sourceId: ModelSourceId;
   error?: string;
 }
+
+/** 模型源在 localStorage 中的键 */
+const SOURCE_KEY = 'zj-model-source';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
-
-/** 默认模型：Xenova/Qwen1.5-0.5B-Chat（量化版，体积小，纯前端可跑） */
-export const DEFAULT_LOCAL_MODEL = 'Xenova/Qwen1.5-0.5B-Chat';
 
 /** 引擎单例 —— 保证同一页面只加载一次模型 */
 let pipelinePromise: Promise<TextGenerationPipeline> | null = null;
@@ -31,6 +50,7 @@ let state: LocalAiState = {
   status: 'idle',
   progress: 0,
   modelId: DEFAULT_LOCAL_MODEL,
+  sourceId: 'hf-mirror',
 };
 
 const listeners = new Set<(s: LocalAiState) => void>();
@@ -56,6 +76,29 @@ export function getLocalAiState(): LocalAiState {
   return state;
 }
 
+/** 读取已保存的模型源 */
+export function readModelSource(): ModelSourceId {
+  if (typeof window === 'undefined') return 'hf-mirror';
+  try {
+    const raw = window.localStorage.getItem(SOURCE_KEY);
+    if (raw === 'hf-mirror' || raw === 'hf-official') return raw;
+  } catch {
+    /* 忽略 */
+  }
+  return 'hf-mirror';
+}
+
+/** 持久化并应用模型源（切换后需重新加载模型才会生效） */
+export function saveModelSource(sourceId: ModelSourceId) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SOURCE_KEY, sourceId);
+  } catch {
+    /* 忽略 */
+  }
+  emit({ sourceId });
+}
+
 export function isLocalAiReady(): boolean {
   return state.status === 'ready';
 }
@@ -71,14 +114,25 @@ export async function loadLocalModel(
   if (pipelinePromise && loadedModelId === modelId) return pipelinePromise;
 
   loadedModelId = modelId;
-  emit({ status: 'loading', progress: 0, modelId, error: undefined });
+  emit({
+    status: 'loading',
+    progress: 0,
+    modelId,
+    sourceId: readModelSource(),
+    error: undefined,
+  });
 
   pipelinePromise = (async () => {
     try {
       const { pipeline, env } = await import('@huggingface/transformers');
 
-      // 允许跨域加载 Hugging Face 模型资源
+      // 允许跨域加载模型资源
       env.allowLocalModels = false;
+
+      // 指向国内镜像源（hf-mirror.com），显著提升下载速度。
+      // remotePathTemplate 保持默认的 {model}/resolve/{revision}/ 形式。
+      const source = findModelSource(readModelSource());
+      env.remoteHost = source.host;
 
       const instance = await pipeline('text-generation', modelId, {
         dtype: 'q4',
@@ -120,17 +174,65 @@ export async function loadLocalModel(
 export async function unloadLocalModel() {
   pipelinePromise = null;
   loadedModelId = '';
-  emit({ status: 'idle', progress: 0, modelId: DEFAULT_LOCAL_MODEL });
+  emit({
+    status: 'idle',
+    progress: 0,
+    modelId: DEFAULT_LOCAL_MODEL,
+    sourceId: readModelSource(),
+  });
 }
 
-/** 将 ChatMessage 数组转成 Qwen ChatML 格式 */
-function toChatML(messages: ChatMessage[]): string {
-  return messages
-    .map((m) => {
-      const role = m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user';
-      return `<|im_start|>${role}\n${m.content}<|im_end|>`;
-    })
-    .join('\n') + '<|im_start|>assistant\n';
+/**
+ * 将 ChatMessage 数组转成对应模型族的聊天模板。
+ *
+ * 不同模型族的模板标记并不相同，若一律用 Qwen 的 ChatML，
+ * 换用其它模型后模型会看不懂提示词，输出质量急剧下降。
+ */
+function applyChatTemplate(
+  messages: ChatMessage[],
+  family: ModelFamily,
+): string {
+  // Qwen / ChatML 系
+  if (family === 'qwen' || family === 'chatml') {
+    return (
+      messages
+        .map((m) => {
+          const role =
+            m.role === 'assistant'
+              ? 'assistant'
+              : m.role === 'system'
+                ? 'system'
+                : 'user';
+          return `<|im_start|>${role}\n${m.content}<|im_end|>`;
+        })
+        .join('\n') + '<|im_start|>assistant\n'
+    );
+  }
+
+  // SmolLM2 系：<|im_start|>role\ncontent<|im_end|>，与 ChatML 同构，
+  // 但结尾不带 assistant 起始标记
+  if (family === 'smol') {
+    return (
+      messages
+        .map((m) => {
+          const role =
+            m.role === 'assistant'
+              ? 'assistant'
+              : m.role === 'system'
+                ? 'system'
+                : 'user';
+          return `<|im_start|>${role}\n${m.content}<|im_end|>`;
+        })
+        .join('\n') + '<|im_start|>assistant\n'
+    );
+  }
+
+  return '';
+}
+
+/** 解析模型所属模板族 */
+function resolveFamily(modelId: string): ModelFamily {
+  return findModelOption(modelId)?.family ?? inferFamily(modelId);
 }
 
 /**
@@ -143,7 +245,8 @@ export async function localChat(
   const pipe = await loadLocalModel();
   const { maxTokens = 512, temperature = 0.7 } = opts;
 
-  const output = (await pipe(toChatML(messages), {
+  const prompt = applyChatTemplate(messages, resolveFamily(loadedModelId));
+  const output = (await pipe(prompt, {
     max_new_tokens: maxTokens,
     temperature,
     do_sample: temperature > 0,
@@ -151,9 +254,10 @@ export async function localChat(
   })) as unknown as Array<{ generated_text: string }>;
 
   const raw = output?.[0]?.generated_text ?? '';
-  // 去掉可能残留的 ChatML 标记
+  // 去掉可能残留的模板标记
   return raw
     .replace(/<\|im_start\|>assistant\s*/g, '')
     .replace(/<\|im_end\|>/g, '')
+    .replace(/<\|endoftext\|>/g, '')
     .trim();
 }

@@ -151,12 +151,12 @@ export function MarketplacePanel() {
                     <div className="flex items-center gap-1.5">
                       <h4 className="truncate text-sm font-medium">{entry.name}</h4>
                       {entry.builtin && (
-                        <Badge variant="outline" className="shrink-0 text-[10px]">
+                        <Badge variant="outline" className="shrink-0 text-[0.6875rem]">
                           预装
                         </Badge>
                       )}
                     </div>
-                    <p className="mt-0.5 text-[11px] text-[var(--zj-muted-fg)]">
+                    <p className="mt-0.5 text-[0.75rem] text-[var(--zj-muted-fg)]">
                       v{entry.version} · {entry.category} · {entry.sizeKB} KB
                     </p>
                   </div>
@@ -253,7 +253,7 @@ export function MarketplacePanel() {
                 </div>
               )}
 
-              <div className="rounded-md border border-[var(--zj-border)] p-3 text-[11px] leading-relaxed text-[var(--zj-muted-fg)]">
+              <div className="rounded-md border border-[var(--zj-border)] p-3 text-[0.75rem] leading-relaxed text-[var(--zj-muted-fg)]">
                 插件与内核完全解耦，可独立打包导出为 .plugin 文件分享给他人导入使用。
                 导入时会校验版本与内核兼容性，不兼容的插件将被拒绝加载。
               </div>
@@ -285,7 +285,7 @@ export function MarketplacePanel() {
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-md border border-[var(--zj-border)] px-2.5 py-2">
-      <p className="text-[10px] text-[var(--zj-muted-fg)]">{label}</p>
+      <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">{label}</p>
       <p className="mt-0.5 text-xs">{value}</p>
     </div>
   );

@@ -239,7 +239,7 @@ export function VocabularyCard({ ctx }: PluginComponentProps) {
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold">{item.word}</span>
                             {item.phonetic && (
-                              <span className="truncate text-[11px] text-muted-foreground">
+                              <span className="truncate text-[0.75rem] text-muted-foreground">
                                 {item.phonetic}
                               </span>
                             )}
@@ -250,16 +250,16 @@ export function VocabularyCard({ ctx }: PluginComponentProps) {
                                 <p className="text-xs text-foreground/85">{item.meaning}</p>
                               )}
                               {item.example && (
-                                <p className="text-[11px] italic text-muted-foreground">{item.example}</p>
+                                <p className="text-[0.75rem] italic text-muted-foreground">{item.example}</p>
                               )}
                               {item.mnemonic && (
-                                <p className="rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300">
+                                <p className="rounded-md bg-amber-500/10 px-2 py-1 text-[0.75rem] text-amber-700 dark:text-amber-300">
                                   口诀：{item.mnemonic}
                                 </p>
                               )}
                             </div>
                           ) : (
-                            <p className="mt-1 text-[11px] text-muted-foreground">
+                            <p className="mt-1 text-[0.75rem] text-muted-foreground">
                               {item.meaning ?? '点击卡片查看释义'}
                             </p>
                           )}
@@ -289,7 +289,7 @@ export function VocabularyCard({ ctx }: PluginComponentProps) {
                             type="button"
                             onClick={() => setLevel(item.id, opt.value)}
                             className={cx(
-                              'rounded-full border px-2 py-0.5 text-[10px] transition-colors',
+                              'rounded-full border px-2 py-0.5 text-[0.6875rem] transition-colors',
                               item.level === opt.value
                                 ? 'border-primary bg-primary/10 text-primary'
                                 : 'border-border/60 text-muted-foreground hover:border-primary/50',
@@ -301,7 +301,7 @@ export function VocabularyCard({ ctx }: PluginComponentProps) {
                         <button
                           type="button"
                           onClick={() => toggleFlip(item.id)}
-                          className="ml-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-primary"
+                          className="ml-auto inline-flex items-center gap-1 text-[0.6875rem] text-muted-foreground hover:text-primary"
                         >
                           <RotateCcw className="h-3 w-3" />
                           {flipped ? '收起' : '翻面'}

@@ -182,7 +182,7 @@ export function TextSummaryCard({ ctx }: PluginComponentProps) {
             })}
           </TabsList>
           {MODES.map((m) => (
-            <TabsContent key={m.value} value={m.value} className="mt-2 text-[11px] text-muted-foreground">
+            <TabsContent key={m.value} value={m.value} className="mt-2 text-[0.75rem] text-muted-foreground">
               {m.system.slice(0, 38)}…
             </TabsContent>
           ))}
@@ -196,7 +196,7 @@ export function TextSummaryCard({ ctx }: PluginComponentProps) {
           className="min-h-32 resize-y text-sm"
         />
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-muted-foreground">{input.length} 字</span>
+          <span className="text-[0.75rem] text-muted-foreground">{input.length} 字</span>
           <Button size="sm" className="ml-auto" onClick={() => void summarize()} disabled={task.loading}>
             <Sparkles className="mr-1.5 h-3.5 w-3.5" />
             {task.loading ? '处理中…' : '开始提炼'}
@@ -255,14 +255,14 @@ export function TextSummaryCard({ ctx }: PluginComponentProps) {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="mb-1 flex items-center gap-1.5">
-                          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+                          <Badge variant="secondary" className="h-4 px-1.5 text-[0.6875rem]">
                             {MODES.find((m) => m.value === item.mode)?.label ?? '摘要'}
                           </Badge>
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-[0.6875rem] text-muted-foreground">
                             {formatRelativeTime(item.at)}
                           </span>
                         </div>
-                        <p className="truncate text-[11px] text-muted-foreground">{item.preview}</p>
+                        <p className="truncate text-[0.75rem] text-muted-foreground">{item.preview}</p>
                       </div>
                       <button
                         type="button"
@@ -276,13 +276,13 @@ export function TextSummaryCard({ ctx }: PluginComponentProps) {
                     <details className="mt-1.5">
                       <summary
                         className={cx(
-                          'cursor-pointer text-[11px] text-primary',
+                          'cursor-pointer text-[0.75rem] text-primary',
                           'hover:underline',
                         )}
                       >
                         展开结果
                       </summary>
-                      <p className="mt-1.5 whitespace-pre-wrap rounded-md bg-muted/40 p-2 text-[11px] leading-relaxed">
+                      <p className="mt-1.5 whitespace-pre-wrap rounded-md bg-muted/40 p-2 text-[0.75rem] leading-relaxed">
                         {item.result}
                       </p>
                     </details>

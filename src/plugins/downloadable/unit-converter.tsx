@@ -315,7 +315,7 @@ export function UnitConverterCard({ ctx }: PluginComponentProps) {
               key={example}
               type="button"
               onClick={() => setQuestion(example)}
-              className="rounded-full border border-border/60 px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+              className="rounded-full border border-border/60 px-2.5 py-0.5 text-[0.75rem] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
             >
               {example}
             </button>
@@ -341,7 +341,7 @@ export function UnitConverterCard({ ctx }: PluginComponentProps) {
               <Icon className="h-4 w-4 text-primary" />
               <span className="text-xs text-muted-foreground">换算结果</span>
               {usedFallback && (
-                <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[10px]">
+                <Badge variant="outline" className="ml-auto h-5 px-1.5 text-[0.6875rem]">
                   本地换算
                 </Badge>
               )}
@@ -354,7 +354,7 @@ export function UnitConverterCard({ ctx }: PluginComponentProps) {
               {formatNumber(result.result, 6)}
             </p>
             {result.note && (
-              <p className="mt-1.5 text-[11px] text-muted-foreground">{result.note}</p>
+              <p className="mt-1.5 text-[0.75rem] text-muted-foreground">{result.note}</p>
             )}
           </motion.div>
         ) : (
@@ -384,7 +384,7 @@ export function UnitConverterCard({ ctx }: PluginComponentProps) {
                   <span
                     key={unit.symbol}
                     className={cx(
-                      'rounded-md bg-muted/50 px-2 py-1 text-[11px] text-muted-foreground',
+                      'rounded-md bg-muted/50 px-2 py-1 text-[0.75rem] text-muted-foreground',
                     )}
                   >
                     {unit.symbol} · {unit.name}

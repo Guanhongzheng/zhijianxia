@@ -149,10 +149,10 @@ export function LoginDialog() {
         </Button>
 
         <div className="flex items-center justify-center gap-1.5">
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-[0.6875rem]">
             局域网内注册
           </Badge>
-          <span className="text-[11px] text-[var(--zj-muted-fg)]">
+          <span className="text-[0.75rem] text-[var(--zj-muted-fg)]">
             账号数据仅保存在你自己的设备上
           </span>
         </div>

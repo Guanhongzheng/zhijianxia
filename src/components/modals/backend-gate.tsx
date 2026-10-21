@@ -79,10 +79,10 @@ export function BackendGate() {
 
         <div className="rounded-md border border-[var(--zj-border)] bg-[var(--zj-muted)] p-3 text-xs leading-relaxed">
           <p className="mb-1.5 font-medium">启动方式</p>
-          <code className="block rounded bg-[var(--zj-card)] px-2 py-1.5 text-[11px]">
+          <code className="block rounded bg-[var(--zj-card)] px-2 py-1.5 text-[0.75rem]">
             npm run server
           </code>
-          <p className="mt-1.5 text-[11px] text-[var(--zj-muted-fg)]">
+          <p className="mt-1.5 text-[0.75rem] text-[var(--zj-muted-fg)]">
             启动后终端会打印本机局域网 IP，请到「系统设置 → 局域网」中填写该地址。
             本地 AI、插件、备忘录、主题包等纯本地功能不受影响，可正常使用。
           </p>

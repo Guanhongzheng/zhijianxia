@@ -560,7 +560,7 @@ export function MusicPlayerCard({ ctx }: PluginComponentProps) {
             )}
           />
           <p className="text-sm font-medium">{imported ? imported.name : current?.title}</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="mt-0.5 text-[0.75rem] text-muted-foreground">
             {imported ? '本地音频' : current?.artist}
           </p>
         </motion.div>
@@ -575,7 +575,7 @@ export function MusicPlayerCard({ ctx }: PluginComponentProps) {
             onValueChange={(v) => seek(v[0] ?? 0)}
             aria-label="播放进度"
           />
-          <div className="flex justify-between text-[10px] tabular-nums text-muted-foreground">
+          <div className="flex justify-between text-[0.6875rem] tabular-nums text-muted-foreground">
             <span>{formatClock(position)}</span>
             <span>{formatClock(limit)}</span>
           </div>
@@ -612,7 +612,7 @@ export function MusicPlayerCard({ ctx }: PluginComponentProps) {
             className="flex-1"
             aria-label="音量"
           />
-          <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+          <span className="w-8 shrink-0 text-right text-[0.6875rem] tabular-nums text-muted-foreground">
             {Math.round(volume * 100)}
           </span>
         </div>
@@ -672,12 +672,12 @@ export function MusicPlayerCard({ ctx }: PluginComponentProps) {
                         : 'border-border/50 hover:border-primary/40',
                     )}
                   >
-                    <span className="w-4 shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                    <span className="w-4 shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground">
                       {i + 1}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs font-medium">{track.title}</span>
-                      <span className="block truncate text-[10px] text-muted-foreground">
+                      <span className="block truncate text-[0.6875rem] text-muted-foreground">
                         {track.mood}
                       </span>
                     </span>
@@ -728,7 +728,7 @@ export function MusicPlayerCard({ ctx }: PluginComponentProps) {
                 <p className="whitespace-pre-wrap">{task.result}</p>
               </motion.div>
             ) : (
-              <p className="rounded-lg border border-dashed border-border/60 p-3 text-center text-[11px] text-muted-foreground">
+              <p className="rounded-lg border border-dashed border-border/60 p-3 text-center text-[0.75rem] text-muted-foreground">
                 让 AI 根据当前场景挑一首合适的曲子
               </p>
             )}
@@ -750,7 +750,7 @@ export function MusicPlayerCard({ ctx }: PluginComponentProps) {
               </div>
             )}
 
-            <p className="text-[10px] leading-relaxed text-muted-foreground">
+            <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
               导入的文件只在浏览器内存中播放，不会上传到任何服务器；移除后立即释放。
             </p>
           </TabsContent>

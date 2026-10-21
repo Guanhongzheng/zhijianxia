@@ -106,7 +106,7 @@ export function FriendsPanel() {
       </div>
 
       {user && (
-        <div className="rounded-md border border-[var(--zj-border)] px-3 py-2 text-[11px] text-[var(--zj-muted-fg)]">
+        <div className="rounded-md border border-[var(--zj-border)] px-3 py-2 text-[0.75rem] text-[var(--zj-muted-fg)]">
           你的 UID：<span className="font-medium text-[var(--zj-fg)]">{user.uid}</span>
           ，把它分享给同一局域网内的伙伴即可互相添加。
         </div>
@@ -280,12 +280,12 @@ function FriendRow({
         <div className="flex items-center gap-1.5">
           <p className="truncate text-sm font-medium">{nickname}</p>
           {online && (
-            <Badge variant="success" className="shrink-0 text-[10px]">
+            <Badge variant="success" className="shrink-0 text-[0.6875rem]">
               在线
             </Badge>
           )}
         </div>
-        <p className="truncate text-[11px] text-[var(--zj-muted-fg)]">
+        <p className="truncate text-[0.75rem] text-[var(--zj-muted-fg)]">
           UID {uid}
           {bio ? ` · ${bio}` : ''}
         </p>

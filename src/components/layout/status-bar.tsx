@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Boxes, CircleDot, LogIn, Play, RefreshCw } from 'lucide-react';
+import { Boxes, Check, CircleDot, LogIn, Play, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { usePluginStore } from '@/store/plugin-store';
-import { avatarColor } from '@/lib/utils';
+import { avatarColor, cn } from '@/lib/utils';
 
 /**
  * 底部导航栏 —— 左侧头像与问候语，右侧状态图标与主行动入口。
@@ -23,9 +23,20 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
   const installed = usePluginStore((s) => s.installed);
 
   const installedModules = modules.filter((m) => installed.includes(m.manifest.id));
-  const firstPlugin = installedModules[0];
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
+  /**
+   * 当前选中的插件 id —— 切换器只负责「选择」，
+   * 真正启动由右下角「启动插件」主行动触发。
+   */
+  const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null);
+
+  // 选中的插件若被卸载，则回落到第一个可用插件
+  const selectedPlugin =
+    installedModules.find((m) => m.manifest.id === selectedPluginId) ??
+    installedModules[0] ??
+    null;
+  const firstPlugin = installedModules[0];
 
   // 点击外部或按 Esc 关闭插件切换器
   useEffect(() => {
@@ -59,13 +70,13 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
         disabled: false,
       }
     : {
-        label: firstPlugin ? '启动插件' : '去安装插件',
-        hint: firstPlugin
-          ? firstPlugin.manifest.name
+        label: selectedPlugin ? '启动插件' : '去安装插件',
+        hint: selectedPlugin
+          ? selectedPlugin.manifest.name
           : '功能广场里有更多',
         icon: Play,
         onClick: () => {
-          if (firstPlugin) openCard(`plugin:${firstPlugin.manifest.id}`);
+          if (selectedPlugin) openCard(`plugin:${selectedPlugin.manifest.id}`);
           else openCard('marketplace');
         },
         disabled: false,
@@ -103,7 +114,7 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
           <span className="block truncate text-sm leading-tight font-medium">
             {logged ? `您好！ ${user?.nickname ?? ''}` : '您好！ 访客'}
           </span>
-          <span className="block truncate text-[10px] leading-tight text-[var(--zj-muted-fg)]">
+          <span className="block truncate text-[0.6875rem] leading-tight text-[var(--zj-muted-fg)]">
             {logged ? '点击查看个人资料' : '点击登录解锁完整功能'}
           </span>
         </span>
@@ -153,8 +164,8 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
                   transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                   className="zj-card absolute right-0 bottom-10 z-50 w-60 overflow-hidden p-1.5"
                 >
-                  <p className="px-2 py-1.5 text-[10px] text-[var(--zj-muted-fg)]">
-                    已安装 {installedModules.length} 个插件
+                  <p className="px-2 py-1.5 text-[0.6875rem] text-[var(--zj-muted-fg)]">
+                    已安装 {installedModules.length} 个插件 · 选择后点右下角启动
                   </p>
                   {installedModules.length === 0 ? (
                     <p className="px-2 py-3 text-center text-xs text-[var(--zj-muted-fg)]">
@@ -162,30 +173,49 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
                     </p>
                   ) : (
                     <div className="max-h-64 space-y-0.5 overflow-y-auto">
-                      {installedModules.map((m) => (
-                        <button
-                          key={m.manifest.id}
-                          type="button"
-                          onClick={() => {
-                            setSwitcherOpen(false);
-                            openCard(`plugin:${m.manifest.id}`);
-                          }}
-                          className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-[var(--zj-muted)]"
-                        >
-                          <span className="flex size-7 shrink-0 items-center justify-center rounded bg-[var(--zj-accent-soft)] text-sm">
-                            {m.manifest.preview ?? '🧩'}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-xs font-medium">
-                              {m.manifest.name}
+                      {installedModules.map((m) => {
+                        const isSelected = selectedPlugin?.manifest.id === m.manifest.id;
+                        return (
+                          <button
+                            key={m.manifest.id}
+                            type="button"
+                            onClick={() => {
+                              // 只做选择，不直接启动 —— 启动由右下角「启动插件」触发
+                              setSelectedPluginId(m.manifest.id);
+                              setSwitcherOpen(false);
+                            }}
+                            aria-pressed={isSelected}
+                            className={cn(
+                              'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors',
+                              isSelected
+                                ? 'bg-[var(--zj-accent-soft)]'
+                                : 'hover:bg-[var(--zj-muted)]',
+                            )}
+                          >
+                            <span className="flex size-7 shrink-0 items-center justify-center rounded bg-[var(--zj-accent-soft)] text-sm">
+                              {m.manifest.preview ?? '🧩'}
                             </span>
-                            <span className="block truncate text-[10px] text-[var(--zj-muted-fg)]">
-                              {m.manifest.category} · v{m.manifest.version}
+                            <span className="min-w-0 flex-1">
+                              <span
+                                className={cn(
+                                  'block truncate text-xs font-medium',
+                                  isSelected ? 'text-[var(--zj-accent)]' : '',
+                                )}
+                              >
+                                {m.manifest.name}
+                              </span>
+                              <span className="block truncate text-[0.6875rem] text-[var(--zj-muted-fg)]">
+                                {m.manifest.category} · v{m.manifest.version}
+                              </span>
                             </span>
-                          </span>
-                          <Play className="size-3 shrink-0 text-[var(--zj-muted-fg)]" />
-                        </button>
-                      ))}
+                            {isSelected ? (
+                              <Check className="size-3.5 shrink-0 text-[var(--zj-accent)]" />
+                            ) : (
+                              <Play className="size-3 shrink-0 text-[var(--zj-muted-fg)]" />
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                   <button
@@ -194,7 +224,7 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
                       setSwitcherOpen(false);
                       openCard('marketplace');
                     }}
-                    className="mt-1 w-full rounded-md border-t border-[var(--zj-border)] px-2 py-1.5 text-left text-[11px] text-[var(--zj-accent)] transition-opacity hover:opacity-70"
+                    className="mt-1 w-full rounded-md border-t border-[var(--zj-border)] px-2 py-1.5 text-left text-[0.75rem] text-[var(--zj-accent)] transition-opacity hover:opacity-70"
                   >
                     去功能广场安装更多 →
                   </button>
@@ -216,7 +246,7 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
             <span className="block text-xs leading-tight font-medium">
               {primary.label}
             </span>
-            <span className="block max-w-[9rem] truncate text-[10px] leading-tight text-[var(--zj-muted-fg)]">
+            <span className="block max-w-[9rem] truncate text-[0.6875rem] leading-tight text-[var(--zj-muted-fg)]">
               {primary.hint}
             </span>
           </span>

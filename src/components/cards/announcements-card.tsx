@@ -119,10 +119,10 @@ export function AnnouncementsCard() {
                 {notice.body}
               </p>
               <div className="mt-auto flex items-center gap-2 pt-1">
-                <Badge variant="outline" className="text-[10px]">
+                <Badge variant="outline" className="text-[0.6875rem]">
                   {notice.authorUid}
                 </Badge>
-                <span className="text-[11px] text-[var(--zj-muted-fg)]">
+                <span className="text-[0.75rem] text-[var(--zj-muted-fg)]">
                   {formatTime(notice.createdAt)}
                 </span>
               </div>

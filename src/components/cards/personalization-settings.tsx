@@ -142,12 +142,12 @@ export function PersonalizationSettings() {
                 <div className="flex items-center justify-between gap-2 border-t border-[var(--zj-border)] px-3 py-2">
                   <div className="min-w-0">
                     <p className="truncate text-xs font-medium">{pack.name}</p>
-                    <p className="text-[10px] text-[var(--zj-muted-fg)]">
+                    <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
                       圆角 {preview.radius}px
                     </p>
                   </div>
                   {active && (
-                    <Badge variant="solid" className="shrink-0 text-[10px]">
+                    <Badge variant="solid" className="shrink-0 text-[0.6875rem]">
                       使用中
                     </Badge>
                   )}
@@ -273,7 +273,7 @@ export function PersonalizationSettings() {
             );
           })}
         </div>
-        <p className="flex items-center gap-1.5 text-[11px] text-[var(--zj-muted-fg)]">
+        <p className="flex items-center gap-1.5 text-[0.75rem] text-[var(--zj-muted-fg)]">
           <Monitor className="size-3" />
           当前：{DENSITY_OPTIONS.find((o) => o.value === density)?.desc}
         </p>

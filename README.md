@@ -51,6 +51,41 @@
 - **界面大小**：小 / 中 / 大三档，通过根字号 + Tailwind 字号变量整体缩放，选择后立即生效并持久化
 - 全部颜色由 CSS 变量驱动，主题包切换时整套界面同步换色
 
+### API 服务商与能力分类
+
+API 配置按**能力分类**组织，四类能力各自独立选择服务商与模型：
+
+| 能力分类 | 可选服务商 | 模型示例 |
+|----------|-----------|----------|
+| **文本对话** | OpenAI API、Anthropic Claude API、Google Gemini API、智谱AI API、DeepSeek API | GPT-4o mini、Claude 3.7 Sonnet、Gemini 2.0 Flash、GLM-4 Flash、DeepSeek Chat |
+| **多模态模型** | OpenAI API、Anthropic Claude API、Google Gemini API、智谱AI API、通义千问VL | GPT-4o、Gemini Pro Vision、Qwen-VL Plus |
+| **图像生成** | OpenAI API、Stability AI API | DALL·E 3、Stable Image Core |
+| **语音模型** | OpenAI API | Whisper API、TTS API |
+
+**四种请求协议**（后端按服务商自动分派，前端无需关心）：
+
+| 协议 | 服务商 | 端点 | 鉴权头 | 响应字段 |
+|------|--------|------|--------|----------|
+| `openai` | OpenAI / 智谱 / DeepSeek / 通义 | `{base}/chat/completions` | `Authorization: Bearer` | `choices[0].message.content` |
+| `anthropic` | Claude | `{base}/messages` | `x-api-key` + `anthropic-version` | `content[0].text` |
+| `gemini` | Gemini | `{base}/models/{model}:generateContent` | `x-goog-api-key` | `candidates[0].content.parts[0].text` |
+| `stability` | Stability AI | `{base}/{model}/text-to-image` | `Authorization: Bearer` | 二进制 PNG |
+
+> 清单本体在 `shared/api-providers.json`，**前后端共用同一份数据源**，
+> 后端 `server/src/providers.js` 与前端 `src/lib/ai/api-providers.ts` 都从这里读取，
+> 避免出现「前端列了、后端不认识」的协议漂移。
+
+每个能力的 API Key **独立加密存储**在后端 SQLite（`ai_key_<能力>` 键名），
+Key 永不回传前端，接口只返回 `hasKey` 布尔值。
+
+### 本地模型来源
+
+- **默认走国内镜像** `hf-mirror.com`，下载更快更稳定；可在设置中切换到 HuggingFace 官方源
+- **可自行选择模型**：Qwen1.5 0.5B / SmolLM2 360M / Qwen3 0.6B / Qwen2.5 0.5B / Qwen2.5 1.5B
+- 切换模型时会先卸载旧模型释放内存，再按新模型重新下载
+- 不同模型族使用各自的聊天模板（`src/lib/ai/local-engine.ts` 的 `applyChatTemplate`），
+  换模型后提示词格式自动匹配，不会出现「模型看不懂提示词」
+
 ### 主题包系统
 
 - 以「主题包」为最小管理单元，每个主题包含：名称、亮/暗模式、主色、辅助色、卡片背景、文字色、圆角规则、阴影强度、壁纸资源
@@ -80,6 +115,8 @@
 ### 统一的体验规范
 
 - 全站**扁平卡片风格**：低对比边框、极轻阴影、大量留白，无厚重拟物阴影
+- **本地模型走国内镜像**（hf-mirror.com），可自行选择要下载的模型
+- **API 按能力分类配置**：文本对话 / 多模态 / 图像生成 / 语音，各自由不同服务商供货
 - **统一骨架屏加载器**：页面初始化、IndexedDB 读取、AI 模型加载、插件解析导入、API 请求、后端连接检测、公告列表加载、好友列表加载、聊天记录加载、主题包加载等全部异步场景复用同一套骨架屏组件，**禁止转圈 loading**
 - **Framer Motion** 全页面交互动效：卡片弹出删除过渡、页面切换动画、弹窗淡入淡出、按钮 hover 微动画
 - 响应式布局，完美适配 PC 端与手机移动端
@@ -165,7 +202,7 @@ npm run start     # 启动生产服务
 | `npm run plugins:build` | 打包可下载插件为 `.plugin` 文件 |
 | `npm run plugins:verify` | 插件内核自检（109 + 35 项断言） |
 | `npm run contract` | 前后端接口契约断言（25 项，需后端已启动） |
-| `npm run e2e` | 端到端验证（26 项，需前后端已启动） |
+| `npm run e2e` | 端到端验证（50 项，需前后端已启动） |
 | `npm run e2e:offline` | 后端离线场景验证（8 项） |
 | `npm run e2e:pollution` | 污染数据自动恢复验证（6 项） |
 | `npm run plugins:typecheck` | 插件目录独立类型校验 |
@@ -336,6 +373,7 @@ zhijianxia/
 │   │   │   └── dashboard-page.tsx  # 第 2 页：功能汇总页
 │   │   ├── cards/
 │   │   │   ├── announcements-card.tsx  # 公告卡片（含管理员编辑）
+│   │   │   ├── api-capability-settings.tsx # ⭐ API 分能力配置面板
 │   │   │   ├── marketplace-card.tsx    # 功能广场卡片
 │   │   │   ├── plugin-host.tsx         # 插件宿主（注入 ctx）
 │   │   │   ├── marketplace-panel.tsx   # 功能广场
@@ -349,6 +387,11 @@ zhijianxia/
 │   │   └── providers.tsx           # 全局 Provider（启动/轮询/WebSocket）
 │   │
 │   ├── lib/
+│   │   ├── ai/
+│   │   │   ├── local-engine.ts      # 本地推理引擎（国内镜像 + 多模型模板）
+│   │   │   ├── local-models.ts      # ⭐ 本地模型清单与下载源
+│   │   │   ├── api-providers.ts     # ⭐ API 服务商清单读取器
+│   │   │   └── scheduler.ts         # 统一 AI 调度层
 │   │   ├── ai/
 │   │   │   ├── local-engine.ts     # Transformers.js 本地推理
 │   │   │   └── scheduler.ts        # ⭐ 统一 AI 调度层
@@ -405,6 +448,8 @@ zhijianxia/
 │   ├── verify-plugins.mjs          # 插件自检
 │   └── verify-kernel.mjs
 │
+├── shared/
+│   └── api-providers.json          # ⭐ API 服务商清单（前后端共用数据源）
 ├── .gitignore
 ├── components.json                 # shadcn/ui 配置
 ├── next.config.ts

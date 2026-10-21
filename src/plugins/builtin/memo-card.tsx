@@ -272,20 +272,20 @@ export function MemoCard({ ctx }: PluginComponentProps) {
                     {(item.category || item.priority || item.reminder) && (
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         {item.category && (
-                          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                          <Badge variant="secondary" className="h-5 px-1.5 text-[0.6875rem]">
                             {item.category}
                           </Badge>
                         )}
                         {item.priority && (
                           <Badge
                             variant={item.priority === '高' ? 'destructive' : 'outline'}
-                            className="h-5 px-1.5 text-[10px]"
+                            className="h-5 px-1.5 text-[0.6875rem]"
                           >
                             {item.priority}优先
                           </Badge>
                         )}
                         {item.reminder && (
-                          <span className="text-[10px] text-muted-foreground">{item.reminder}</span>
+                          <span className="text-[0.6875rem] text-muted-foreground">{item.reminder}</span>
                         )}
                       </div>
                     )}

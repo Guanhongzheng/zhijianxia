@@ -15,12 +15,13 @@ export const DENSITY_OPTIONS: { value: Density; label: string; desc: string }[] 
 
 /**
  * 各密度对应的根字号。
- * 当前界面默认为「小」（0.875rem），中/大依次放大。
+ * 三档整体放大：原先「小」档偏小（0.875rem），
+ * 现以 0.9375rem（15px）为最小档，中/大依次递增。
  */
 export const DENSITY_SCALE: Record<Density, string> = {
-  sm: '0.875rem',
-  md: '1rem',
-  lg: '1.15rem',
+  sm: '0.9375rem',
+  md: '1.0625rem',
+  lg: '1.1875rem',
 };
 
 /** 读取当前密度 */

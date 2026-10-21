@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "chat",
+      "name": "文本对话",
+      "desc": "通用文本生成与多轮对话，插件的 AI 能力默认走这一档",
+      "icon": "message-square"
+    },
+    {
+      "id": "vision",
+      "name": "多模态模型",
+      "desc": "支持图片理解的模型，可读取截图、照片与图表",
+      "icon": "eye"
+    },
+    {
+      "id": "image",
+      "name": "图像生成",
+      "desc": "根据文字描述生成图片",
+      "icon": "image"
+    },
+    {
+      "id": "speech",
+      "name": "语音模型",
+      "desc": "语音转文字与文字转语音",
+      "icon": "mic"
+    }
+  ],
+  "providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI API",
+      "capabilities": ["chat", "vision", "image", "speech"],
+      "protocol": "openai",
+      "baseUrl": "https://api.openai.com/v1",
+      "keyHint": "sk-...",
+      "docs": "https://platform.openai.com/api-keys",
+      "models": {
+        "chat": [
+          { "id": "gpt-4o-mini", "name": "GPT-4o mini", "desc": "性价比高，响应快" },
+          { "id": "gpt-4o", "name": "GPT-4o", "desc": "综合能力最强" },
+          { "id": "gpt-4-turbo", "name": "GPT-4 Turbo", "desc": "长上下文，复杂推理" },
+          { "id": "o3-mini", "name": "o3-mini", "desc": "偏推理型模型" }
+        ],
+        "vision": [
+          { "id": "gpt-4o", "name": "GPT-4o", "desc": "支持图片理解" },
+          { "id": "gpt-4o-mini", "name": "GPT-4o mini", "desc": "轻量多模态" },
+          { "id": "gpt-4-turbo", "name": "GPT-4 Turbo", "desc": "高精度图像理解" }
+        ],
+        "image": [
+          { "id": "dall-e-3", "name": "DALL·E 3", "desc": "画质细腻，提示词遵循好" },
+          { "id": "dall-e-2", "name": "DALL·E 2", "desc": "速度快，成本低" }
+        ],
+        "speech": [
+          { "id": "whisper-1", "name": "Whisper API", "desc": "语音转文字" },
+          { "id": "tts-1", "name": "TTS API", "desc": "文字转语音" },
+          { "id": "tts-1-hd", "name": "TTS HD", "desc": "更高音质的语音合成" }
+        ]
+      }
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic Claude API",
+      "capabilities": ["chat", "vision"],
+      "protocol": "anthropic",
+      "baseUrl": "https://api.anthropic.com/v1",
+      "keyHint": "sk-ant-...",
+      "docs": "https://console.anthropic.com/settings/keys",
+      "models": {
+        "chat": [
+          { "id": "claude-3-7-sonnet-latest", "name": "Claude 3.7 Sonnet", "desc": "最新旗舰，兼顾速度与推理" },
+          { "id": "claude-3-5-sonnet-latest", "name": "Claude 3.5 Sonnet", "desc": "稳定可靠" },
+          { "id": "claude-3-5-haiku-latest", "name": "Claude 3.5 Haiku", "desc": "轻量快速" }
+        ],
+        "vision": [
+          { "id": "claude-3-5-sonnet-latest", "name": "Claude 3.5 Sonnet", "desc": "支持图片理解" },
+          { "id": "claude-3-7-sonnet-latest", "name": "Claude 3.7 Sonnet", "desc": "高精度图像理解" }
+        ]
+      }
+    },
+    {
+      "id": "gemini",
+      "name": "Google Gemini API",
+      "capabilities": ["chat", "vision"],
+      "protocol": "gemini",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "keyHint": "AIza...",
+      "docs": "https://aistudio.google.com/app/apikey",
+      "models": {
+        "chat": [
+          { "id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "desc": "速度快，额度充足" },
+          { "id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro", "desc": "长上下文，复杂任务" },
+          { "id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "desc": "轻量快速" }
+        ],
+        "vision": [
+          { "id": "gemini-1.5-pro", "name": "Gemini Pro Vision", "desc": "高精度图像理解" },
+          { "id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash", "desc": "快速多模态" }
+        ]
+      }
+    },
+    {
+      "id": "zhipu",
+      "name": "智谱AI API",
+      "capabilities": ["chat", "vision"],
+      "protocol": "openai",
+      "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "keyHint": "...",
+      "docs": "https://open.bigmodel.cn/usercenter/apikeys",
+      "models": {
+        "chat": [
+          { "id": "glm-4-flash", "name": "GLM-4 Flash", "desc": "免费额度多，响应快" },
+          { "id": "glm-4-plus", "name": "GLM-4 Plus", "desc": "综合能力更强" },
+          { "id": "glm-4-air", "name": "GLM-4 Air", "desc": "轻量版本" }
+        ],
+        "vision": [
+          { "id": "glm-4v-plus", "name": "GLM-4V Plus", "desc": "视觉理解" },
+          { "id": "glm-4v-flash", "name": "GLM-4V Flash", "desc": "轻量视觉模型" }
+        ]
+      }
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek API",
+      "capabilities": ["chat"],
+      "protocol": "openai",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "keyHint": "sk-...",
+      "docs": "https://platform.deepseek.com/api_keys",
+      "models": {
+        "chat": [
+          { "id": "deepseek-chat", "name": "DeepSeek Chat", "desc": "通用对话，R1 之外的首选" },
+          { "id": "deepseek-reasoner", "name": "DeepSeek Reasoner", "desc": "带思维链的推理模型" }
+        ]
+      }
+    },
+    {
+      "id": "qwen-vl",
+      "name": "通义千问VL",
+      "capabilities": ["vision"],
+      "protocol": "openai",
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "keyHint": "sk-...",
+      "docs": "https://bailian.console.aliyun.com/",
+      "models": {
+        "vision": [
+          { "id": "qwen-vl-plus", "name": "Qwen-VL Plus", "desc": "阿里通义视觉理解" },
+          { "id": "qwen-vl-max", "name": "Qwen-VL Max", "desc": "最高精度" },
+          { "id": "qwen-vl-latest", "name": "Qwen-VL Latest", "desc": "始终指向最新版" }
+        ]
+      }
+    },
+    {
+      "id": "stability",
+      "name": "Stability AI API",
+      "capabilities": ["image"],
+      "protocol": "stability",
+      "baseUrl": "https://api.stability.ai/v2beta/stable-image",
+      "keyHint": "sk-...",
+      "docs": "https://platform.stability.ai/account/keys",
+      "models": {
+        "image": [
+          { "id": "stable-image-core", "name": "Stable Image Core", "desc": "均衡的速度与质量" },
+          { "id": "stable-image-ultra", "name": "Stable Image Ultra", "desc": "最高画质" },
+          { "id": "stable-diffusion-3.5-large", "name": "SD 3.5 Large", "desc": "细节表现优秀" }
+        ]
+      }
+    }
+  ]
+}

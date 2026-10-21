@@ -367,6 +367,212 @@ function log(ok, name, extra = '') {
       await page.waitForTimeout(500);
     }
 
+    // ---------- 9.8 新增能力：插件选择分离 / 模型自选 / API 分类 ----------
+
+    // 插件切换器：选择不直接启动，启动由右下角主行动触发
+    const switcherBtn = await page.$('button[aria-label="展开插件列表"]');
+    log(!!switcherBtn, '底栏提供插件选择器');
+    if (switcherBtn) {
+      await switcherBtn.click();
+      await page.waitForTimeout(800);
+
+      // 记录选择前的底栏提示
+      const hintBefore = await page.$eval(
+        '.zj-snap-section:nth-child(2) footer',
+        (el) => el.innerText.replace(/\s+/g, ' '),
+      );
+
+      // 选择第二个插件（若存在）
+      const pickedName = await page.evaluate(() => {
+        const panel = document.querySelector('.zj-snap-section:nth-child(2) footer');
+        const btns = Array.from(panel.querySelectorAll('button')).filter(
+          (x) => x.getAttribute('aria-pressed') !== null,
+        );
+        const target = btns[1] ?? btns[0];
+        if (!target) return null;
+        const name = target.innerText.split('\n')[1]?.trim() ?? '';
+        target.click();
+        return name;
+      });
+      await page.waitForTimeout(900);
+
+      const dialogAfterPick = await page.$('[role="dialog"]');
+      log(
+        !dialogAfterPick,
+        '插件选择后不直接启动（需点右下角启动）',
+        pickedName ?? '',
+      );
+
+      const hintAfter = await page.$eval(
+        '.zj-snap-section:nth-child(2) footer',
+        (el) => el.innerText.replace(/\s+/g, ' '),
+      );
+      log(
+        hintBefore !== hintAfter,
+        '选择插件后底栏主行动提示同步更新',
+        hintAfter.slice(-24),
+      );
+
+      // 点右下角「启动插件」才真正启动
+      await page.evaluate(() => {
+        const f = document.querySelector('.zj-snap-section:nth-child(2) footer');
+        const btn = Array.from(f.querySelectorAll('button')).find((x) =>
+          x.textContent.includes('启动插件'),
+        );
+        if (btn) btn.click();
+      });
+      await page.waitForTimeout(1500);
+      const startedDialog = await page.$('[role="dialog"]');
+      log(!!startedDialog, '点右下角「启动插件」后真正启动所选插件');
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(800);
+    }
+
+    // 本地模型：国内镜像源 + 用户自选模型
+    await page.evaluate(() => {
+      const cards = Array.from(
+        document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
+      );
+      const t = cards.find(
+        (c) => c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
+          '系统设置',
+      );
+      if (t) t.click();
+    });
+    await page.waitForTimeout(1400);
+    await page.evaluate(() => {
+      const nav = document.querySelector('[role="dialog"] nav');
+      const btn = Array.from(nav.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === 'AI 引擎',
+      );
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(1400);
+
+    const aiPanel = await page.textContent('[role="dialog"]');
+    log(
+      (aiPanel ?? '').includes('HF 镜像') &&
+        (aiPanel ?? '').includes('HuggingFace 官方'),
+      '本地模型提供国内镜像与官方源切换',
+    );
+    log(
+      (aiPanel ?? '').includes('Qwen1.5 0.5B') &&
+        (aiPanel ?? '').includes('SmolLM2 360M') &&
+        (aiPanel ?? '').includes('Qwen3 0.6B'),
+      '本地模型提供多个模型供用户自选下载',
+    );
+
+    // API 设置：按能力分类
+    await page.evaluate(() => {
+      const nav = document.querySelector('[role="dialog"] nav');
+      const btn = Array.from(nav.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === 'API',
+      );
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(1600);
+
+    const apiPanel = await page.textContent('[role="dialog"]');
+    log(
+      ['文本对话', '多模态模型', '图像生成', '语音模型'].every((c) =>
+        (apiPanel ?? '').includes(c),
+      ),
+      'API 设置按 4 个能力分类组织',
+    );
+    log(
+      ['OpenAI API', 'Anthropic Claude API', 'Google Gemini API', '智谱AI API', 'DeepSeek API'].every(
+        (c) => (apiPanel ?? '').includes(c),
+      ),
+      'API 设置提供 5 家服务商可选',
+    );
+
+    // 切到图像生成，验证 DALL·E 3 与 Stability AI
+    await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const btn = Array.from(dlg.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === '图像生成',
+      );
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(1200);
+    const imagePanel = await page.textContent('[role="dialog"]');
+    log(
+      (imagePanel ?? '').includes('Stability AI API'),
+      '图像生成分类提供 Stability AI 服务商',
+    );
+    // DALL·E 3 属于 OpenAI 服务商，切到 OpenAI 后应出现
+    await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const btn = Array.from(dlg.querySelectorAll('button')).find((x) => {
+        const line = (x.innerText || '').split('\n')[0]?.trim();
+        return line === 'OpenAI API';
+      });
+      if (btn) btn.click();
+    });
+    await page
+      .waitForFunction(
+        () =>
+          (document.querySelector('[role="dialog"]')?.textContent ?? '').includes(
+            'dall-e-3',
+          ),
+        { timeout: 10000 },
+      )
+      .catch(() => {
+        /* 超时则由后续断言报告 */
+      });
+    const openaiImage = await page.textContent('[role="dialog"]');
+    log(
+      (openaiImage ?? '').includes('dall-e-3'),
+      '图像生成分类在 OpenAI 下提供 DALL·E 3',
+    );
+
+    // 切到语音模型
+    await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const btn = Array.from(dlg.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === '语音模型',
+      );
+      if (btn) btn.click();
+    });
+    // 轮询等待模型列表渲染完成，避免与重挂载竞态
+    await page
+      .waitForFunction(
+        () =>
+          (document.querySelector('[role="dialog"]')?.textContent ?? '').includes(
+            'whisper-1',
+          ),
+        { timeout: 10000 },
+      )
+      .catch(() => {
+        /* 超时则由后续断言报告 */
+      });
+    const speechPanel = await page.textContent('[role="dialog"]');
+    log(
+      (speechPanel ?? '').includes('whisper-1') &&
+        (speechPanel ?? '').includes('tts-1'),
+      '语音模型分类含 Whisper API 与 TTS API',
+    );
+
+    // 切到多模态模型
+    await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const btn = Array.from(dlg.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === '多模态模型',
+      );
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(1200);
+    const visionPanel = await page.textContent('[role="dialog"]');
+    log(
+      (visionPanel ?? '').includes('Anthropic Claude API') &&
+        (visionPanel ?? '').includes('Google Gemini API') &&
+        (visionPanel ?? '').includes('通义千问VL'),
+      '多模态模型分类含 Claude / Gemini / 通义千问VL 服务商',
+    );
+
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(800);
+
     // ---------- 10. 主题切换 ----------
     const beforeBg = await page.$eval('body', (el) => getComputedStyle(el).backgroundColor);
     await page.click('.zj-snap-section:nth-child(2) button[aria-label="切换亮暗模式"]');

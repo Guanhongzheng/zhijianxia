@@ -72,7 +72,7 @@ export function WelcomePage({ onEnter }: { onEnter: () => void }) {
                   <p className="truncate text-sm leading-tight font-medium">
                     您好！ {user.nickname}
                   </p>
-                  <p className="truncate text-[10px] leading-tight text-[var(--zj-muted-fg)]">
+                  <p className="truncate text-[0.6875rem] leading-tight text-[var(--zj-muted-fg)]">
                     UID {user.uid}
                     {user.role === 'admin' ? ' · 管理员' : ''}
                   </p>
@@ -101,7 +101,7 @@ export function WelcomePage({ onEnter }: { onEnter: () => void }) {
                   <p className="text-sm leading-tight font-medium">
                     登录以使用完整功能
                   </p>
-                  <p className="truncate text-[10px] leading-tight text-[var(--zj-muted-fg)]">
+                  <p className="truncate text-[0.6875rem] leading-tight text-[var(--zj-muted-fg)]">
                     好友、群聊与公告管理需要登录
                   </p>
                 </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import {
+  Check,
   Cpu,
   Database,
   Info,
@@ -27,15 +28,21 @@ import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useThemeStore } from '@/store/theme-store';
 import { usePluginStore } from '@/store/plugin-store';
-import {
-  fetchBackendAiConfig,
-  saveBackendAiConfig,
-  testApiConnection,
-} from '@/lib/backend/api';
 import { idbClear } from '@/lib/storage/idb';
-import { getLocalAiState, loadLocalModel } from '@/lib/ai/local-engine';
+import {
+  getLocalAiState,
+  loadLocalModel,
+  unloadLocalModel,
+  saveModelSource,
+  readModelSource,
+  LOCAL_MODEL_OPTIONS,
+  MODEL_SOURCES,
+  DEFAULT_LOCAL_MODEL,
+  type ModelSourceId,
+} from '@/lib/ai/local-engine';
 import { ProfileSettings } from '@/components/cards/profile-settings';
 import { PersonalizationSettings } from '@/components/cards/personalization-settings';
+import { ApiCapabilitySettings } from '@/components/cards/api-capability-settings';
 import { cn } from '@/lib/utils';
 
 /** 设置项定义（左侧导航） */
@@ -91,7 +98,7 @@ export function SettingsPanel() {
         {section === 'personalization' && <PersonalizationSettings />}
         {section === 'ai' && <AiEngineSettings />}
         {section === 'lan' && <LanSettings />}
-        {section === 'api' && <ApiSettings />}
+        {section === 'api' && <ApiCapabilitySettings />}
         {section === 'general' && <GeneralSettings />}
         {section === 'about' && <AboutSettings />}
       </div>
@@ -107,6 +114,10 @@ function AiEngineSettings() {
   const notify = useAppStore((s) => s.notify);
   const [aiState, setAiState] = useState(getLocalAiState());
   const [warming, setWarming] = useState(false);
+  /** 用户选择的模型 id（决定下载哪个模型） */
+  const [modelId, setModelId] = useState(DEFAULT_LOCAL_MODEL);
+  /** 用户选择的下载源 */
+  const [sourceId, setSourceId] = useState<ModelSourceId>(readModelSource());
 
   useEffect(() => {
     // 订阅本地模型加载进度
@@ -147,10 +158,128 @@ function AiEngineSettings() {
       <Separator />
 
       <SettingRow
-        title="本地模型"
-        desc="Xenova/Qwen1.5-0.5B-Chat · 首次使用需下载模型文件，之后完全离线可用"
+        title="模型下载源"
+        desc="默认走国内镜像加速，下载更快更稳定"
+      >
+        <div className="flex flex-col gap-1.5">
+          {MODEL_SOURCES.map((s) => {
+            const active = sourceId === s.id;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => {
+                  setSourceId(s.id);
+                  saveModelSource(s.id);
+                  notify(
+                    active
+                      ? '模型源未变化'
+                      : `已切换到${s.name}，下次加载模型时生效`,
+                    'success',
+                  );
+                }}
+                className={cn(
+                  'flex items-start gap-2.5 rounded-md border px-2.5 py-2 text-left transition-colors',
+                  active
+                    ? 'border-[var(--zj-accent)] bg-[var(--zj-accent-soft)]'
+                    : 'border-[var(--zj-border)] hover:bg-[var(--zj-muted)]',
+                )}
+              >
+                <span className="mt-0.5 shrink-0">
+                  {active ? (
+                    <Check className="size-3.5 text-[var(--zj-accent)]" />
+                  ) : (
+                    <span className="block size-3.5 rounded-full border border-[var(--zj-border)]" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium">{s.name}</span>
+                    {s.domestic && (
+                      <Badge variant="success" className="text-[0.625rem]">
+                        推荐
+                      </Badge>
+                    )}
+                  </span>
+                  <span className="mt-0.5 block text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
+                    {s.desc}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[0.625rem] text-[var(--zj-muted-fg)] opacity-70">
+                    {s.host}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </SettingRow>
+
+      <Separator />
+
+      <SettingRow
+        title="选择要下载的模型"
+        desc="自行挑选模型，下载后完全离线可用；切换模型会重新下载权重"
       >
         <div className="space-y-2">
+          <div className="flex flex-col gap-1.5">
+            {LOCAL_MODEL_OPTIONS.map((m) => {
+              const active = modelId === m.id;
+              const loaded = aiState.modelId === m.id && aiState.status === 'ready';
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    setModelId(m.id);
+                    if (loaded) {
+                      notify('该模型已在运行中', 'info');
+                    } else {
+                      notify(`已选择 ${m.name}，点击下方按钮开始下载`, 'success');
+                    }
+                  }}
+                  className={cn(
+                    'flex items-start gap-2.5 rounded-md border px-2.5 py-2 text-left transition-colors',
+                    active
+                      ? 'border-[var(--zj-accent)] bg-[var(--zj-accent-soft)]'
+                      : 'border-[var(--zj-border)] hover:bg-[var(--zj-muted)]',
+                  )}
+                >
+                  <span className="mt-0.5 shrink-0">
+                    {active ? (
+                      <Check className="size-3.5 text-[var(--zj-accent)]" />
+                    ) : (
+                      <span className="block size-3.5 rounded-full border border-[var(--zj-border)]" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs font-medium">{m.name}</span>
+                      <Badge variant="outline" className="text-[0.625rem]">
+                        {m.size}
+                      </Badge>
+                      {m.recommended && (
+                        <Badge variant="success" className="text-[0.625rem]">
+                          推荐
+                        </Badge>
+                      )}
+                      {loaded && (
+                        <Badge variant="solid" className="text-[0.625rem]">
+                          运行中
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="mt-0.5 block text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
+                      {m.desc}
+                    </span>
+                    <span className="mt-0.5 block text-[0.625rem] text-[var(--zj-muted-fg)] opacity-70">
+                      {m.approxSize} · {m.id}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           <div className="flex items-center gap-2">
             <Badge
               variant={
@@ -180,26 +309,48 @@ function AiEngineSettings() {
             <div className="zj-skeleton h-1.5 w-full rounded-full" />
           )}
 
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={warming || aiState.status === 'loading'}
-            onClick={async () => {
-              setWarming(true);
-              try {
-                await loadLocalModel();
-                notify('本地模型已就绪', 'success');
-              } catch {
-                notify('模型加载失败，请检查网络后重试', 'error');
-              } finally {
-                setWarming(false);
-                setAiState(getLocalAiState());
-              }
-            }}
-          >
-            <RefreshCw className="size-3.5" />
-            {aiState.status === 'ready' ? '重新加载模型' : '预热本地模型'}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={warming || aiState.status === 'loading'}
+              onClick={async () => {
+                setWarming(true);
+                try {
+                  // 切换模型前先卸载旧模型，释放内存
+                  if (aiState.modelId !== modelId) {
+                    await unloadLocalModel();
+                  }
+                  await loadLocalModel(modelId);
+                  notify('本地模型已就绪', 'success');
+                } catch {
+                  notify('模型加载失败，请检查网络或更换下载源后重试', 'error');
+                } finally {
+                  setWarming(false);
+                  setAiState(getLocalAiState());
+                }
+              }}
+            >
+              <RefreshCw className="size-3.5" />
+              {aiState.status === 'ready' && aiState.modelId === modelId
+                ? '重新加载模型'
+                : `下载并加载 ${modelId.split('/').pop()}`}
+            </Button>
+
+            {aiState.status === 'ready' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  await unloadLocalModel();
+                  setAiState(getLocalAiState());
+                  notify('已卸载本地模型', 'info');
+                }}
+              >
+                卸载模型
+              </Button>
+            )}
+          </div>
         </div>
       </SettingRow>
     </div>
@@ -268,7 +419,7 @@ function LanSettings() {
           <div className="flex items-center justify-between rounded-md border border-[var(--zj-border)] px-3 py-2">
             <div>
               <p className="text-xs font-medium">自动连接重连</p>
-              <p className="text-[11px] text-[var(--zj-muted-fg)]">
+              <p className="text-[0.75rem] text-[var(--zj-muted-fg)]">
                 断线后按退避策略自动重试
               </p>
             </div>
@@ -284,192 +435,6 @@ function LanSettings() {
 }
 
 /** API 配置卡片 */
-function ApiSettings() {
-  const api = useAppStore((s) => s.api);
-  const setApi = useAppStore((s) => s.setApi);
-  const lan = useAppStore((s) => s.lan);
-  const token = useAuthStore((s) => s.token);
-  const isAdmin = useAuthStore((s) => s.isAdmin);
-  const notify = useAppStore((s) => s.notify);
-
-  const [testing, setTesting] = useState(false);
-  const [backendKeySet, setBackendKeySet] = useState(false);
-  const [draft, setDraft] = useState({
-    apiUrl: api.apiUrl,
-    model: api.model,
-    timeout: api.timeout,
-    temperature: api.temperature,
-    apiKey: '',
-  });
-
-  useEffect(() => {
-    setDraft({
-      apiUrl: api.apiUrl,
-      model: api.model,
-      timeout: api.timeout,
-      temperature: api.temperature,
-      apiKey: '',
-    });
-  }, [api.apiUrl, api.model, api.timeout, api.temperature]);
-
-  // 读取后端是否已配置密钥（不返回明文）
-  useEffect(() => {
-    if (!token) return;
-    void fetchBackendAiConfig(lan, token)
-      .then((cfg) => setBackendKeySet(cfg.hasKey))
-      .catch(() => setBackendKeySet(false));
-  }, [lan, token]);
-
-  return (
-    <div className="space-y-4">
-      <div className="rounded-md border border-[var(--zj-border)] bg-[var(--zj-muted)] px-3 py-2.5 text-[11px] leading-relaxed text-[var(--zj-muted-fg)]">
-        {api.mode === 'backend'
-          ? '当前为后端转发模式：API Key 提交给后端后加密存储，不会回传到前端。'
-          : '当前为前端本地模式：API Key 仅保存在浏览器本地加密存储中，不会上传到任何服务器。'}
-      </div>
-
-      <div className="space-y-2.5">
-        <div className="space-y-1.5">
-          <Label htmlFor="api-url" className="text-xs">
-            API 地址
-          </Label>
-          <Input
-            id="api-url"
-            value={draft.apiUrl}
-            onChange={(e) => setDraft({ ...draft, apiUrl: e.target.value })}
-            placeholder="https://api.openai.com/v1/chat/completions"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="api-key" className="text-xs">
-            API Key
-            {api.mode === 'backend' && backendKeySet && (
-              <span className="ml-1.5 text-[10px] text-emerald-500">
-                后端已配置
-              </span>
-            )}
-          </Label>
-          <Input
-            id="api-key"
-            type="password"
-            value={draft.apiKey}
-            onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })}
-            placeholder="sk-..."
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="api-model" className="text-xs">
-            模型名称
-          </Label>
-          <Input
-            id="api-model"
-            value={draft.model}
-            onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-            placeholder="gpt-4o-mini"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="api-timeout" className="text-xs">
-              请求超时（毫秒）
-            </Label>
-            <Input
-              id="api-timeout"
-              type="number"
-              value={draft.timeout}
-              onChange={(e) =>
-                setDraft({ ...draft, timeout: Number(e.target.value) || 30000 })
-              }
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">温度：{draft.temperature.toFixed(1)}</Label>
-            <Slider
-              value={[draft.temperature]}
-              min={0}
-              max={2}
-              step={0.1}
-              onValueChange={([v]) => setDraft({ ...draft, temperature: v })}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          onClick={async () => {
-            setApi({
-              apiUrl: draft.apiUrl,
-              model: draft.model,
-              timeout: draft.timeout,
-              temperature: draft.temperature,
-              ...(draft.apiKey ? { apiKey: draft.apiKey } : {}),
-            });
-
-            // 后端转发模式下，管理员可把配置写入后端加密存储
-            if (api.mode === 'backend' && isAdmin && token) {
-              try {
-                await saveBackendAiConfig(lan, token, {
-                  apiUrl: draft.apiUrl,
-                  model: draft.model,
-                  timeout: draft.timeout,
-                  temperature: draft.temperature,
-                  ...(draft.apiKey ? { apiKey: draft.apiKey } : {}),
-                });
-                setBackendKeySet(true);
-              } catch (err) {
-                notify(
-                  err instanceof Error ? err.message : '后端配置保存失败',
-                  'error',
-                );
-                return;
-              }
-            }
-            notify('配置已保存', 'success');
-          }}
-        >
-          保存配置
-        </Button>
-
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={testing}
-          onClick={async () => {
-            setTesting(true);
-            try {
-              const ok = await testApiConnection({
-                apiUrl: draft.apiUrl,
-                apiKey: draft.apiKey || api.apiKey,
-                model: draft.model,
-                timeout: draft.timeout,
-                temperature: draft.temperature,
-              });
-              notify(ok ? 'API 连通性正常' : 'API 连通性测试失败', ok ? 'success' : 'error');
-            } catch (err) {
-              notify(err instanceof Error ? err.message : 'API 测试失败', 'error');
-            } finally {
-              setTesting(false);
-            }
-          }}
-        >
-          {testing ? <Skeleton className="size-3.5" /> : <Plug className="size-3.5" />}
-          测试连通性
-        </Button>
-      </div>
-
-      {api.mode === 'backend' && !isAdmin && (
-        <p className="text-[11px] text-[var(--zj-muted-fg)]">
-          后端转发配置仅管理员可写入，普通用户的配置保存在本地。
-        </p>
-      )}
-    </div>
-  );
-}
 
 /** 通用设置 */
 function GeneralSettings() {
@@ -550,17 +515,17 @@ function GeneralSettings() {
                   <span className="text-base">{m.manifest.preview}</span>
                   <div>
                     <p className="text-xs font-medium">{m.manifest.name}</p>
-                    <p className="text-[10px] text-[var(--zj-muted-fg)]">
+                    <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
                       v{m.manifest.version} · {m.manifest.category}
                     </p>
                   </div>
                 </div>
-                <Badge variant="outline" className="text-[10px]">
+                <Badge variant="outline" className="text-[0.6875rem]">
                   加载中
                 </Badge>
               </div>
             ))}
-          <p className="text-[11px] text-[var(--zj-muted-fg)]">
+          <p className="text-[0.75rem] text-[var(--zj-muted-fg)]">
             插件配置信息保存在前端 IndexedDB，可在功能广场导入导出。
           </p>
         </div>
@@ -682,12 +647,12 @@ function ModeOption({
         <p className="text-xs font-medium">{title}</p>
         {active && <Badge variant="solid">当前</Badge>}
         {disabled && !active && (
-          <Badge variant="warning" className="text-[10px]">
+          <Badge variant="warning" className="text-[0.6875rem]">
             {disabledHint}
           </Badge>
         )}
       </div>
-      <p className="mt-1 text-[11px] leading-relaxed text-[var(--zj-muted-fg)]">
+      <p className="mt-1 text-[0.75rem] leading-relaxed text-[var(--zj-muted-fg)]">
         {desc}
       </p>
     </button>
@@ -718,7 +683,7 @@ function ActionRow({
         <span className="shrink-0 text-[var(--zj-muted-fg)]">{icon}</span>
         <div className="min-w-0">
           <p className="text-xs font-medium">{title}</p>
-          <p className="text-[11px] text-[var(--zj-muted-fg)]">{desc}</p>
+          <p className="text-[0.75rem] text-[var(--zj-muted-fg)]">{desc}</p>
         </div>
       </div>
       <Button

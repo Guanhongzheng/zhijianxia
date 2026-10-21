@@ -104,7 +104,7 @@ export function GroupsPanel() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{g.name}</p>
-                <p className="truncate text-[11px] text-[var(--zj-muted-fg)]">
+                <p className="truncate text-[0.75rem] text-[var(--zj-muted-fg)]">
                   {g.groupId} · {g.memberCount ?? g.members?.length ?? 0} 位成员
                 </p>
               </div>
@@ -285,14 +285,14 @@ function GroupChatView({
       <div className="flex items-center justify-between gap-2 border-b border-[var(--zj-border)] px-3.5 py-2.5">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{group.name}</p>
-          <p className="truncate text-[11px] text-[var(--zj-muted-fg)]">
+          <p className="truncate text-[0.75rem] text-[var(--zj-muted-fg)]">
             {group.groupId} · {group.memberCount ?? group.members?.length ?? 0} 位成员
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <div className="flex items-center gap-1.5">
             <Bot className="size-3.5 text-[var(--zj-muted-fg)]" />
-            <Label htmlFor="ai-toggle" className="text-[11px]">
+            <Label htmlFor="ai-toggle" className="text-[0.75rem]">
               AI
             </Label>
             <Switch
@@ -351,7 +351,7 @@ function GroupChatView({
               >
                 <Avatar className="size-7 shrink-0">
                   <AvatarFallback
-                    className="text-[10px] text-white"
+                    className="text-[0.6875rem] text-white"
                     style={{
                       backgroundColor: isAi
                         ? 'var(--zj-accent)'
@@ -372,7 +372,7 @@ function GroupChatView({
                     {isAi ? m.body.slice(4).trim() : m.body}
                   </p>
                   <p
-                    className={`mt-1 text-[10px] ${
+                    className={`mt-1 text-[0.6875rem] ${
                       mine ? 'opacity-70' : 'text-[var(--zj-muted-fg)]'
                     }`}
                   >
@@ -388,7 +388,7 @@ function GroupChatView({
           <div className="flex gap-2.5">
             <Avatar className="size-7 shrink-0">
               <AvatarFallback
-                className="bg-[var(--zj-accent)] text-[10px] text-[var(--zj-accent-fg)]"
+                className="bg-[var(--zj-accent)] text-[0.6875rem] text-[var(--zj-accent-fg)]"
               >
                 AI
               </AvatarFallback>

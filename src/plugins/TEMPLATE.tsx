@@ -79,7 +79,7 @@ export function YourPlugin({ ctx }: PluginComponentProps) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{manifest.name}</p>
-          <p className="text-[11px] text-[var(--zj-muted-fg)]">
+          <p className="text-[0.75rem] text-[var(--zj-muted-fg)]">
             v{manifest.version} · {manifest.category}
           </p>
         </div>
@@ -136,7 +136,7 @@ export function YourPlugin({ ctx }: PluginComponentProps) {
 
       {/* 本地历史 */}
       {history.length > 0 && (
-        <div className="text-[11px] text-[var(--zj-muted-fg)]">
+        <div className="text-[0.75rem] text-[var(--zj-muted-fg)]">
           本地已保存 {history.length} 条记录
         </div>
       )}

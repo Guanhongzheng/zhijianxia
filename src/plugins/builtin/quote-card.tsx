@@ -190,7 +190,7 @@ export function QuoteCard({ ctx }: PluginComponentProps) {
                   <span className="text-xs leading-relaxed text-foreground/80">{item}</span>
                   <button
                     type="button"
-                    className="shrink-0 text-[10px] text-muted-foreground hover:text-destructive"
+                    className="shrink-0 text-[0.6875rem] text-muted-foreground hover:text-destructive"
                     onClick={() => {
                       const next = favorites.filter((f) => f !== item);
                       setFavorites(next);

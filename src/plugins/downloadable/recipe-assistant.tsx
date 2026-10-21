@@ -199,7 +199,7 @@ export function RecipeAssistantCard({ ctx }: PluginComponentProps) {
               key={item}
               type="button"
               onClick={() => addIngredient(item)}
-              className="rounded-full border border-border/60 px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+              className="rounded-full border border-border/60 px-2.5 py-0.5 text-[0.75rem] text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
             >
               + {item}
             </button>
@@ -228,16 +228,16 @@ export function RecipeAssistantCard({ ctx }: PluginComponentProps) {
           >
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold">{recipe.name}</h3>
-              <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+              <Badge variant="secondary" className="h-5 px-1.5 text-[0.6875rem]">
                 约 {recipe.minutes} 分钟
               </Badge>
-              <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+              <Badge variant="outline" className="h-5 px-1.5 text-[0.6875rem]">
                 {recipe.difficulty}
               </Badge>
             </div>
 
             {recipe.missing && recipe.missing.length > 0 && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[0.75rem] text-muted-foreground">
                 还需补充：<span className="text-amber-600 dark:text-amber-400">{recipe.missing.join('、')}</span>
               </p>
             )}
@@ -245,7 +245,7 @@ export function RecipeAssistantCard({ ctx }: PluginComponentProps) {
             <ol className="space-y-1.5">
               {recipe.steps.map((step, i) => (
                 <li key={i} className="flex items-start gap-2 text-xs leading-relaxed">
-                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-medium text-primary">
+                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[0.6875rem] font-medium text-primary">
                     {i + 1}
                   </span>
                   <span className="text-foreground/85">{step}</span>
@@ -254,7 +254,7 @@ export function RecipeAssistantCard({ ctx }: PluginComponentProps) {
             </ol>
 
             {recipe.tip && (
-              <p className="rounded-md bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+              <p className="rounded-md bg-amber-500/10 px-2.5 py-1.5 text-[0.75rem] text-amber-700 dark:text-amber-300">
                 小贴士：{recipe.tip}
               </p>
             )}

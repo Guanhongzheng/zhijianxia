@@ -38,10 +38,10 @@ export function TopBar({
           <Icon className="size-4" strokeWidth={1.9} />
         </div>
         <div className="min-w-0">
-          <h1 className="truncate text-[15px] leading-tight font-semibold">
+          <h1 className="truncate text-[1rem] leading-tight font-semibold">
             {title}
           </h1>
-          <p className="truncate text-[11px] leading-tight text-[var(--zj-muted-fg)]">
+          <p className="truncate text-[0.75rem] leading-tight text-[var(--zj-muted-fg)]">
             {subtitle}
           </p>
         </div>

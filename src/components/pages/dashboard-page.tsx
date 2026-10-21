@@ -133,7 +133,7 @@ function CardShell({
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{title}</p>
-          <p className="truncate text-[11px] text-[var(--zj-muted-fg)]">{desc}</p>
+          <p className="truncate text-[0.75rem] text-[var(--zj-muted-fg)]">{desc}</p>
         </div>
         {action}
       </div>
@@ -175,7 +175,7 @@ function EntryCard({
           {icon}
         </div>
         {offline && (
-          <Badge variant="warning" className="text-[10px]">
+          <Badge variant="warning" className="text-[0.6875rem]">
             需后端
           </Badge>
         )}

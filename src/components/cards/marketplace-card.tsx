@@ -36,7 +36,7 @@ export function MarketplaceCard() {
         {loading ? (
           <Skeleton className="h-5 w-16" />
         ) : (
-          <Badge variant="outline" className="text-[10px]">
+          <Badge variant="outline" className="text-[0.6875rem]">
             已装 {installedCount} / {total}
           </Badge>
         )}
@@ -51,12 +51,12 @@ export function MarketplaceCard() {
 
       {/* 快捷入口 */}
       <div className="flex w-full items-center gap-1.5 border-t border-[var(--zj-border)] pt-2.5">
-        <span className="flex items-center gap-1 text-[11px] text-[var(--zj-muted-fg)]">
+        <span className="flex items-center gap-1 text-[0.75rem] text-[var(--zj-muted-fg)]">
           <Search className="size-3" />
           搜索
         </span>
-        <span className="text-[11px] text-[var(--zj-muted-fg)]">·</span>
-        <span className="flex items-center gap-1 text-[11px] text-[var(--zj-muted-fg)]">
+        <span className="text-[0.75rem] text-[var(--zj-muted-fg)]">·</span>
+        <span className="flex items-center gap-1 text-[0.75rem] text-[var(--zj-muted-fg)]">
           <Store className="size-3" />
           导入导出
         </span>

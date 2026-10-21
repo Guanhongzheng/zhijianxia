@@ -25,6 +25,8 @@ export function ProfileSettings() {
   const openLogin = useAuthStore((s) => s.openLogin);
   const lan = useAppStore((s) => s.lan);
   const notify = useAppStore((s) => s.notify);
+  const jumpToPage = useAppStore((s) => s.jumpToPage);
+  const openCard = useAppStore((s) => s.openCard);
 
   const [nickname, setNickname] = useState('');
   const [bio, setBio] = useState('');
@@ -74,13 +76,13 @@ export function ProfileSettings() {
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-medium">{user.nickname}</p>
             {user.role === 'admin' && (
-              <Badge variant="solid" className="shrink-0 text-[10px]">
+              <Badge variant="solid" className="shrink-0 text-[0.6875rem]">
                 <ShieldCheck className="size-2.5" />
                 管理员
               </Badge>
             )}
           </div>
-          <p className="truncate text-[11px] text-[var(--zj-muted-fg)]">
+          <p className="truncate text-[0.75rem] text-[var(--zj-muted-fg)]">
             UID {user.uid}
           </p>
         </div>
@@ -100,7 +102,7 @@ export function ProfileSettings() {
             maxLength={24}
             disabled={loading}
           />
-          <p className="text-[10px] text-[var(--zj-muted-fg)]">
+          <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
             {nickname.length} / 24
           </p>
         </div>
@@ -118,7 +120,7 @@ export function ProfileSettings() {
             maxLength={200}
             disabled={loading}
           />
-          <p className="text-[10px] text-[var(--zj-muted-fg)]">
+          <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
             {bio.length} / 200
           </p>
         </div>
@@ -163,7 +165,7 @@ export function ProfileSettings() {
       {/* 账号操作 */}
       <div className="rounded-md border border-[var(--zj-border)] p-3.5">
         <p className="text-xs font-medium">账号</p>
-        <p className="mt-0.5 mb-3 text-[11px] leading-relaxed text-[var(--zj-muted-fg)]">
+        <p className="mt-0.5 mb-3 text-[0.75rem] leading-relaxed text-[var(--zj-muted-fg)]">
           退出后需要重新输入昵称与密码登录。本地个性化配置（主题、插件、备忘录）不会丢失。
         </p>
         <Button
@@ -171,6 +173,9 @@ export function ProfileSettings() {
           variant="outline"
           onClick={() => {
             logout();
+            // 关闭设置弹窗并回到欢迎页
+            openCard(null);
+            jumpToPage(0);
             notify('已退出登录', 'info');
           }}
         >

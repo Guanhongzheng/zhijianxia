@@ -11,7 +11,12 @@ import {
   backendFetch,
   type LanConfig,
   BackendOfflineError,
-} from './client';
+} from './client'
+import type {
+  ApiCapability,
+  ApiCatalog,
+  ApiProtocol,
+} from '@/lib/ai/api-providers';
 
 // ---------- 通用类型 ----------
 
@@ -512,6 +517,24 @@ export interface BackendAiConfig {
   temperature: number;
   /** 是否已配置密钥（后端不返回明文） */
   hasKey: boolean;
+  /** 按能力分类的运行配置（后端新增，缺失时视为空） */
+  capabilities?: Partial<Record<ApiCapability, CapabilityConfig>>;
+  /** 共享服务商清单（后端原样返回，前端直接渲染选择器） */
+  catalog?: ApiCatalog;
+}
+
+/** 单个能力分类的配置 */
+export interface CapabilityConfig {
+  /** 服务商 id */
+  provider: string;
+  /** 协议类型 */
+  protocol: ApiProtocol;
+  /** 接口基础地址 */
+  base: string;
+  /** 模型 id */
+  model: string;
+  /** 是否已配置密钥 */
+  hasKey: boolean;
 }
 
 /** 读取后端 AI 配置（管理员） */
@@ -525,6 +548,8 @@ export async function fetchBackendAiConfig(
     timeout?: number;
     temperature?: number;
     hasKey?: boolean;
+    capabilities?: Partial<Record<ApiCapability, CapabilityConfig>>;
+    catalog?: ApiCatalog;
   }>(cfg, '/api/ai/config', {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -534,7 +559,77 @@ export async function fetchBackendAiConfig(
     timeout: data.timeout ?? 30000,
     temperature: data.temperature ?? 0.7,
     hasKey: data.hasKey ?? false,
+    capabilities: data.capabilities,
+    catalog: data.catalog,
   };
+}
+
+/**
+ * 保存某个能力分类的 API 配置 —— 需要管理员。
+ * 不传 capability 时更新 chat 主配置（保持历史行为）。
+ */
+export async function saveCapabilityConfig(
+  cfg: LanConfig,
+  token: string,
+  payload: {
+    capability: ApiCapability;
+    provider?: string;
+    protocol?: ApiProtocol;
+    base?: string;
+    model?: string;
+    apiKey?: string;
+  },
+): Promise<void> {
+  await backendFetch(cfg, '/api/ai/config', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** 后端生成图像（依赖后端转发，需 image 能力已配置） */
+export async function backendGenerateImage(
+  cfg: LanConfig,
+  token: string,
+  payload: { prompt: string; capability?: ApiCapability; model?: string },
+): Promise<string> {
+  const res = await backendFetch<{ image?: string }>(cfg, '/api/ai/image', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+    timeout: 120_000,
+  });
+  return res.image ?? '';
+}
+
+/** 后端语音能力：转写或合成 */
+export async function backendSpeech(
+  cfg: LanConfig,
+  token: string,
+  payload: {
+    action: 'transcribe' | 'synthesize';
+    capability?: ApiCapability;
+    model?: string;
+    audio?: string;
+    text?: string;
+    voice?: string;
+  },
+): Promise<{ text?: string; audio?: string }> {
+  return backendFetch<{ text?: string; audio?: string }>(cfg, '/api/ai/speech', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+    timeout: 120_000,
+  });
 }
 
 /** 保存后端 AI 配置（管理员，Key 加密存储） */
