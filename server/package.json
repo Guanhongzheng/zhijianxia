@@ -13,6 +13,10 @@
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.85",
+    "@ai-sdk/google": "^4.0.102",
+    "@ai-sdk/openai": "^4.0.99",
+    "ai": "^7.0.148",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "ws": "^8.18.0"

@@ -26,6 +26,7 @@ const friendRoutes = require('./routes/friends');
 const groupRoutes = require('./routes/groups');
 const messageRoutes = require('./routes/messages');
 const aiRoutes = require('./routes/ai-proxy');
+const aiStreamRoutes = require('./routes/ai-stream');
 const registryRoutes = require('./routes/registry');
 
 const PORT = Number(process.env.PORT) || 8787;
@@ -56,6 +57,8 @@ app.use('/api/notices', noticeRoutes);
 app.use('/api/friends', friendRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/messages', messageRoutes);
+// AI SDK 流式对话：POST /api/ai/stream（SSE）
+app.use('/api/ai', aiStreamRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/registry', registryRoutes);
 

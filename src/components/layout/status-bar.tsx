@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Boxes, Check, CircleDot, LogIn, Play, RefreshCw } from 'lucide-react';
+import { Boxes, Check, CircleDot, LogIn, Play, RefreshCw, Sparkles } from 'lucide-react';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { usePluginStore } from '@/store/plugin-store';
@@ -125,6 +125,17 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
 
       {/* 右侧：状态图标 + 主行动 */}
       <div className="flex shrink-0 items-center gap-1.5">
+        {/* AI 对话：流式对话 + 工具调用 + 生成式界面 */}
+        <button
+          type="button"
+          onClick={() => openCard('ai-chat')}
+          title="AI 对话"
+          aria-label="AI 对话"
+          className="flex size-8 items-center justify-center rounded-md text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
+        >
+          <Sparkles className="size-4" />
+        </button>
+
         {/* 后端状态 */}
         <button
           type="button"

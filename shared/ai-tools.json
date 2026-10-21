@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "note": "AI SDK 工具清单 —— 前后端唯一数据源。parameters 为 JSON Schema（draft-07 子集），供后端透传给外部模型；前端另用 zod 做运行时校验。",
+  "tools": [
+    {
+      "name": "calculator",
+      "group": "实用工具",
+      "icon": "Calculator",
+      "description": "计算一个数学表达式并返回结果。支持 + - * / % ^ 与括号，例如 (12+8)*3.5。需要算数时优先使用本工具。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "description": "要计算的数学表达式，例如 (12+8)*3.5。只允许数字与 + - * / % ^ ( ) . 空格"
+          }
+        },
+        "required": ["expression"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "currentTime",
+      "group": "实用工具",
+      "icon": "Clock",
+      "description": "获取当前日期与时间。可选传入 IANA 时区名。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "IANA 时区名，例如 Asia/Shanghai。留空则使用本机时区"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "unitConvert",
+      "group": "实用工具",
+      "icon": "Ruler",
+      "description": "换算单位。支持长度（mm/cm/m/km/inch/ft/mile）、重量（mg/g/kg/t/oz/lb）、温度（celsius/fahrenheit）。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "value": { "type": "number", "description": "要换算的数值" },
+          "from": { "type": "string", "description": "源单位，如 km / m / cm / kg / g / lb / celsius / fahrenheit" },
+          "to": { "type": "string", "description": "目标单位，同上" }
+        },
+        "required": ["value", "from", "to"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "textStats",
+      "group": "实用工具",
+      "icon": "TextCursorInput",
+      "description": "统计一段文本的字符数、词数、行数与段落数。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "要统计的文本" }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "randomNumber",
+      "group": "实用工具",
+      "icon": "Dices",
+      "description": "在给定闭区间内生成一个随机整数。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "min": { "type": "integer", "description": "最小值（含）" },
+          "max": { "type": "integer", "description": "最大值（含）" }
+        },
+        "required": ["min", "max"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

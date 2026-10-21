@@ -668,3 +668,126 @@ export async function localChat(
     .replace(/<\|endoftext\|>/g, '')
     .trim();
 }
+
+/**
+ * 本地流式生成 —— 逐段 yield 增量文本。
+ *
+ * ## 为什么需要它
+ *
+ * AI SDK 的 `useChat` 以「文本增量」为基本单位消费流式响应，
+ * 而 `localChat` 是一次性返回完整文本 —— 那样首字要等模型跑完，
+ * 流式对话就退化成了「带 loading 的非流式」。
+ *
+ * ## 实现
+ *
+ * 用 Transformers.js 的 `TextStreamer` 把 token 增量回调出来，
+ * 回调里往队列塞文本；生成任务在后台跑，生成器从队列里取，
+ * 两者用「队列空 + 任务结束」作为终止条件。
+ *
+ * 注意三点：
+ * 1. `skip_prompt: true` —— 不要把提示词回吐给用户；
+ * 2. `skip_special_tokens: true` —— 过滤 `<|im_end|>` 等模板标记；
+ * 3. 队列消费要能被 `abortSignal` 打断，否则用户点「停止」后还在空转。
+ */
+export async function* localChatStream(
+  messages: ChatMessage[],
+  opts: {
+    maxTokens?: number;
+    temperature?: number;
+    signal?: AbortSignal;
+  } = {},
+): AsyncGenerator<string, void, unknown> {
+  const pipe = await loadLocalModel();
+  const { maxTokens = 512, temperature = 0.7, signal } = opts;
+
+  const prompt = applyChatTemplate(messages, resolveFamily(loadedModelId));
+
+  const { TextStreamer } = await import('@huggingface/transformers');
+  const tokenizer = await loadLocalTokenizer();
+
+  /** 待消费的增量队列 */
+  const queue: string[] = [];
+  /** 是否已结束（生成任务完成或失败） */
+  let done = false;
+  /** 生成失败时的错误 */
+  let failure: unknown = null;
+  /** 唤醒等待者的钩子 */
+  let notify: (() => void) | null = null;
+
+  const wake = () => {
+    notify?.();
+    notify = null;
+  };
+
+  const streamer = new TextStreamer(tokenizer, {
+    skip_prompt: true,
+    skip_special_tokens: true,
+    callback_function: (text: string) => {
+      if (!text) return;
+      queue.push(text);
+      wake();
+    },
+  });
+
+  // 生成任务在后台推进
+  const task = (async () => {
+    try {
+      await pipe(prompt, {
+        max_new_tokens: maxTokens,
+        temperature,
+        do_sample: temperature > 0,
+        return_full_text: false,
+        streamer,
+      });
+    } catch (err) {
+      failure = err;
+    } finally {
+      done = true;
+      wake();
+    }
+  })();
+
+  // 中断时直接结束消费
+  const onAbort = () => {
+    done = true;
+    wake();
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+
+  try {
+    for (;;) {
+      if (queue.length > 0) {
+        yield queue.shift() as string;
+        continue;
+      }
+      if (failure) throw failure;
+      if (done) break;
+      // 队列空且未结束：等下一次回调唤醒
+      await new Promise<void>((resolve) => {
+        notify = resolve;
+      });
+    }
+  } finally {
+    signal?.removeEventListener('abort', onAbort);
+    // 提前退出（中断）时让生成任务自行收尾，不阻塞调用方
+    void task.catch(() => undefined);
+  }
+}
+
+/** 本地 tokenizer（懒加载，供 TextStreamer 使用） */
+let localTokenizer: unknown = null;
+
+/** 加载（并缓存）本地模型的 tokenizer */
+async function loadLocalTokenizer(): Promise<never> {
+  if (localTokenizer) return localTokenizer as never;
+  const { AutoTokenizer, env } = await import('@huggingface/transformers');
+  const source = findModelSource(readModelSource());
+  env.allowLocalModels = false;
+  env.remoteHost = source.host;
+  env.remotePathTemplate = source.pathTemplate;
+  localTokenizer = await AutoTokenizer.from_pretrained(
+    loadedModelId || DEFAULT_LOCAL_MODEL,
+    { revision: source.revision },
+  );
+  return localTokenizer as never;
+}

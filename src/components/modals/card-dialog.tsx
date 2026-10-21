@@ -12,6 +12,7 @@ import { SettingsPanel } from '@/components/cards/settings-panel';
 import { FriendsPanel } from '@/components/cards/friends-panel';
 import { GroupsPanel } from '@/components/cards/groups-panel';
 import { AnnouncementsCard } from '@/components/cards/announcements-card';
+import { AiChatPanel } from '@/components/ai/ai-chat-panel';
 import { Skeleton } from '@/components/ui/skeleton';
 
 /**
@@ -47,6 +48,7 @@ export function CardDialog() {
       'friends',
       'groups',
       'announcements',
+      'ai-chat',
     ];
     if (STATIC_CARDS.includes(activeCard)) return null;
     // 裸 id 命中某个已安装插件时，按插件卡片处理
@@ -82,6 +84,8 @@ export function CardDialog() {
         return '群聊';
       case 'announcements':
         return '公告管理';
+      case 'ai-chat':
+        return 'AI 对话';
       default:
         return module?.manifest.name ?? '功能卡片';
     }
@@ -99,6 +103,8 @@ export function CardDialog() {
         return '创建群组，实时收发消息';
       case 'announcements':
         return '更新日志与新增功能公告';
+      case 'ai-chat':
+        return 'Vercel AI SDK 驱动的流式对话、工具调用与生成式界面';
       default:
         return module?.manifest.description;
     }
@@ -127,6 +133,12 @@ export function CardDialog() {
         {activeCard === 'announcements' && (
           <div className="space-y-3">
             <AnnouncementsCard />
+          </div>
+        )}
+        {/* AI 对话：整卡片高度铺满，让消息区吃掉多余空间 */}
+        {activeCard === 'ai-chat' && (
+          <div className="h-[calc(100vh-13rem)] min-h-[420px]">
+            <AiChatPanel className="h-full" />
           </div>
         )}
         {resolvedPluginId && kernelLoading && <PluginBootSkeleton />}
