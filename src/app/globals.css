@@ -206,14 +206,15 @@ body {
   scroll-snap-stop: always;
   overflow-y: auto;
   overscroll-behavior-y: contain;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   /* 内部内容使用 h-full 铺满浏览器可视区 */
   display: flex;
   flex-direction: column;
 }
 
 .zj-snap-section::-webkit-scrollbar {
-  width: 6px;
+  width: 0;
+  height: 8px;
 }
 
 .zj-snap-section::-webkit-scrollbar-thumb {
@@ -233,6 +234,31 @@ body {
   background-color: var(--zj-card);
   border: 1px solid var(--zj-border);
   border-radius: var(--zj-radius);
+}
+
+/* ============================================================
+   全局隐藏右侧（垂直）滚动条
+   —— 垂直方向一律不显示，横向滚动条保留
+   ============================================================ */
+html,
+body {
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 8px;
+}
+
+/* 任意可滚动容器的垂直滚动条一并隐藏 */
+*::-webkit-scrollbar {
+  width: 0;
+  height: 8px;
+}
+
+* {
+  scrollbar-width: none;
 }
 
 /* ============================================================

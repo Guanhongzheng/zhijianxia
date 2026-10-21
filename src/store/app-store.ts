@@ -72,9 +72,18 @@ export interface AppState {
    */
   pageJump: { index: 0 | 1; token: number } | null;
   jumpToPage: (index: 0 | 1) => void;
-  /** 提示消息 */
-  toast: { id: number; text: string; type: 'info' | 'success' | 'error' } | null;
+  /** 提示消息队列（多条并存时向下排列） */
+  toasts: ToastItem[];
   notify: (text: string, type?: 'info' | 'success' | 'error') => void;
+  /** 手动关闭某条提示 */
+  dismissToast: (id: number) => void;
+}
+
+/** 单条提示 */
+export interface ToastItem {
+  id: number;
+  text: string;
+  type: 'info' | 'success' | 'error';
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -187,12 +196,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ pageJump: { index, token: Date.now() } });
   },
 
-  toast: null,
+  toasts: [],
   notify: (text, type = 'info') => {
-    const id = Date.now();
-    set({ toast: { id, text, type } });
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    // 队列式提示：多条并存，向下排列
+    set((s) => ({ toasts: [...s.toasts, { id, text, type }] }));
     setTimeout(() => {
-      if (get().toast?.id === id) set({ toast: null });
-    }, 3200);
+      get().dismissToast(id);
+    }, 3000);
+  },
+
+  dismissToast: (id) => {
+    set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
   },
 }));

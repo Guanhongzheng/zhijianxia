@@ -2,8 +2,9 @@
  * 本地模型清单 —— 供用户在设置中自行选择要下载哪个模型。
  *
  * 说明：
- * - 全部仓库均已通过 hf-mirror.com 国内镜像实测可达（config.json 与 onnx/model_q4.onnx 均返回 200）。
- * - 体积为 q4 量化权重的近似值，实际以 Hugging Face 仓库为准。
+ * - 全部仓库均已通过**阿里巴巴魔搭社区（ModelScope）** 实测可达
+ *   （config.json 与 onnx/model_q4.onnx 均返回 200），且带 CORS 头可跨域加载。
+ * - 体积为 q4 量化权重的近似值，实际以模型仓库为准。
  * - 换用 Qwen 系列以外模型时，聊天模板可能不同，
  *   因此模板按「模型族」选择，见 local-engine.ts 的 resolveChatTemplate。
  */
@@ -33,7 +34,7 @@ export const DEFAULT_LOCAL_MODEL = 'Xenova/Qwen1.5-0.5B-Chat';
 
 /**
  * 可选模型清单。
- * 全部经 hf-mirror.com 实测可达，按体积从小到大排列。
+ * 全部经阿里巴巴魔搭社区（ModelScope）实测可达，按体积从小到大排列。
  */
 export const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
   {
@@ -97,42 +98,50 @@ export function inferFamily(id: string): ModelFamily {
 // ---------------------------------------------------------------------------
 
 /** 模型源 id */
-export type ModelSourceId = 'hf-mirror' | 'hf-official';
+export type ModelSourceId = 'modelscope' | 'hf-official';
 
 export interface ModelSourceOption {
   id: ModelSourceId;
   name: string;
   /** remoteHost 主机地址 */
   host: string;
+  /** remotePathTemplate —— 仓库内文件路径模板 */
+  pathTemplate: string;
+  /** 默认分支（revision） */
+  revision: string;
   desc: string;
-  /** 是否为国内镜像 */
+  /** 是否为国内源 */
   domestic: boolean;
 }
 
 /**
  * 可选模型源。
- * 国内镜像 hf-mirror.com 走 CDN 加速，无墙环境下速度更稳定；
- * 官方源作为兜底，万一镜像缺文件可切换。
+ * 国内源为**阿里巴巴魔搭社区（ModelScope）** —— 国内访问稳定、速度快；
+ * 官方 HuggingFace 作为兜底。
  */
 export const MODEL_SOURCES: ModelSourceOption[] = [
   {
-    id: 'hf-mirror',
-    name: 'HF 镜像（国内加速）',
-    host: 'https://hf-mirror.com',
-    desc: 'hf-mirror.com 国内镜像，下载更快更稳定，推荐使用',
+    id: 'modelscope',
+    name: '魔搭社区（阿里，国内）',
+    host: 'https://www.modelscope.cn/',
+    pathTemplate: 'models/{model}/resolve/{revision}/',
+    revision: 'master',
+    desc: '阿里巴巴魔搭社区，国内访问更快更稳定，推荐使用',
     domestic: true,
   },
   {
     id: 'hf-official',
     name: 'HuggingFace 官方',
-    host: 'https://huggingface.co',
-    desc: '模型仓库的官方源，镜像缺文件时可切换到此源',
+    host: 'https://huggingface.co/',
+    pathTemplate: '{model}/resolve/{revision}/',
+    revision: 'main',
+    desc: '模型仓库的官方源，魔搭缺文件时可切换到此源',
     domestic: false,
   },
 ];
 
-/** 默认使用国内镜像 */
-export const DEFAULT_MODEL_SOURCE: ModelSourceId = 'hf-mirror';
+/** 默认使用国内源（阿里巴巴魔搭） */
+export const DEFAULT_MODEL_SOURCE: ModelSourceId = 'modelscope';
 
 /** 按 id 查找模型源 */
 export function findModelSource(id: string): ModelSourceOption {

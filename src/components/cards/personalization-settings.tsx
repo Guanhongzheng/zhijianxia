@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Check,
@@ -26,12 +26,7 @@ import {
   downloadThemePackage,
   createThemePackage,
 } from '@/lib/theme/packager';
-import {
-  fetchRegistryThemes,
-  fetchRegistryTheme,
-  uploadRegistryTheme,
-  type RegistryTheme,
-} from '@/lib/backend/registry';
+import { uploadRegistryTheme } from '@/lib/backend/registry';
 import { cacheTheme, removeCachedTheme } from '@/lib/registry-cache';
 import { cn } from '@/lib/utils';
 
@@ -58,37 +53,10 @@ export function PersonalizationSettings() {
 
   const notify = useAppStore((s) => s.notify);
   const lan = useAppStore((s) => s.lan);
-  const backendOnline = useAppStore((s) => s.backendOnline);
   const token = useAuthStore((s) => s.token);
   const isAdmin = useAuthStore((s) => s.isAdmin);
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const [registryThemes, setRegistryThemes] = useState<RegistryTheme[]>([]);
-  const [registryLoading, setRegistryLoading] = useState(false);
-  const [downloading, setDownloading] = useState<string | null>(null);
-
-  // 拉取局域网仓库中的主题包
-  useEffect(() => {
-    if (!backendOnline || !token) {
-      setRegistryThemes([]);
-      return;
-    }
-    let mounted = true;
-    setRegistryLoading(true);
-    void fetchRegistryThemes(lan, token)
-      .then((list) => {
-        if (mounted) setRegistryThemes(list);
-      })
-      .catch(() => {
-        if (mounted) setRegistryThemes([]);
-      })
-      .finally(() => {
-        if (mounted) setRegistryLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [backendOnline, lan, token]);
 
   /** 导入本地 .theme 文件 */
   const handleImport = async (file: File) => {
@@ -102,32 +70,6 @@ export function PersonalizationSettings() {
     cacheTheme(pack);
     applyThemePack(pack.id);
     notify(`主题包「${pack.name}」已导入并应用`, 'success');
-  };
-
-  /** 从广场下载主题包 */
-  const handleDownload = async (item: RegistryTheme) => {
-    if (!token) {
-      notify('请先登录后再下载主题包', 'error');
-      return;
-    }
-    setDownloading(item.id);
-    try {
-      const raw = await fetchRegistryTheme(lan, token, item.id);
-      const pack = {
-        ...raw,
-        id: raw.id || item.id,
-        name: raw.name || item.name,
-        builtin: false,
-      };
-      saveCustomPack(pack);
-      cacheTheme(pack);
-      applyThemePack(pack.id);
-      notify(`主题包「${pack.name}」已下载并应用`, 'success');
-    } catch (err) {
-      notify(err instanceof Error ? err.message : '主题包下载失败', 'error');
-    } finally {
-      setDownloading(null);
-    }
   };
 
   /** 上传当前主题包到广场 */
@@ -205,12 +147,12 @@ export function PersonalizationSettings() {
 
       <Separator />
 
-      {/* 主题包 */}
+      {/* 主题 */}
       <section className="space-y-2.5">
         <div>
-          <p className="text-sm font-medium">主题包</p>
+          <p className="text-sm font-medium">主题</p>
           <p className="mt-0.5 text-xs text-[var(--zj-muted-fg)]">
-            主题包为 .theme 文件，可在外部制作后导入，也可从广场下载
+            主题为 .theme 文件，可在外部制作后导入，也可从广场下载
           </p>
         </div>
 
@@ -350,72 +292,6 @@ export function PersonalizationSettings() {
             );
           })}
         </div>
-      </section>
-
-      <Separator />
-
-      {/* 广场主题包 */}
-      <section className="space-y-2.5">
-        <div>
-          <p className="flex items-center gap-1.5 text-sm font-medium">
-            <Store className="size-3.5 text-[var(--zj-accent)]" />
-            广场主题包
-          </p>
-          <p className="mt-0.5 text-xs text-[var(--zj-muted-fg)]">
-            {backendOnline
-              ? '从局域网仓库下载主题包，下载后可离线使用'
-              : '后端服务未开启，无法浏览广场主题包'}
-          </p>
-        </div>
-
-        {registryLoading ? (
-          <div className="space-y-2">
-            <div className="zj-skeleton h-14 w-full rounded-md" />
-            <div className="zj-skeleton h-14 w-full rounded-md" />
-          </div>
-        ) : registryThemes.length === 0 ? (
-          <p className="rounded-md border border-[var(--zj-border)] px-3 py-6 text-center text-xs text-[var(--zj-muted-fg)]">
-            {backendOnline ? '广场暂无主题包' : '启动后端服务后可浏览广场主题包'}
-          </p>
-        ) : (
-          <div className="space-y-1.5">
-            {registryThemes.map((item) => {
-              const local = packs.find((p) => p.id === item.id);
-              return (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-2.5 rounded-md border border-[var(--zj-border)] px-2.5 py-2"
-                >
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[var(--zj-accent-soft)] text-sm">
-                    {item.preview}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-medium">{item.name}</p>
-                    <p className="truncate text-[0.6875rem] text-[var(--zj-muted-fg)]">
-                      v{item.version}
-                      {item.author ? ` · ${item.author}` : ''}
-                    </p>
-                  </div>
-                  {local ? (
-                    <Badge variant="success" className="shrink-0 text-[0.6875rem]">
-                      已下载
-                    </Badge>
-                  ) : (
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={downloading === item.id}
-                      onClick={() => void handleDownload(item)}
-                    >
-                      <Download className="size-3" />
-                      {downloading === item.id ? '下载中…' : '下载'}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
       </section>
 
       <Separator />

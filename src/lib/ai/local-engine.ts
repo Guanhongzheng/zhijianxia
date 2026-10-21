@@ -6,6 +6,7 @@
 import type { TextGenerationPipeline } from '@huggingface/transformers';
 import {
   DEFAULT_LOCAL_MODEL,
+  DEFAULT_MODEL_SOURCE,
   findModelOption,
   findModelSource,
   inferFamily,
@@ -30,7 +31,7 @@ export interface LocalAiState {
   progress: number;
   /** 模型 id */
   modelId: string;
-  /** 当前使用的模型源（国内镜像 / 官方） */
+  /** 当前使用的模型源（魔搭社区 / 官方） */
   sourceId: ModelSourceId;
   error?: string;
 }
@@ -50,7 +51,7 @@ let state: LocalAiState = {
   status: 'idle',
   progress: 0,
   modelId: DEFAULT_LOCAL_MODEL,
-  sourceId: 'hf-mirror',
+  sourceId: 'modelscope',
 };
 
 const listeners = new Set<(s: LocalAiState) => void>();
@@ -78,14 +79,14 @@ export function getLocalAiState(): LocalAiState {
 
 /** 读取已保存的模型源 */
 export function readModelSource(): ModelSourceId {
-  if (typeof window === 'undefined') return 'hf-mirror';
+  if (typeof window === 'undefined') return DEFAULT_MODEL_SOURCE;
   try {
     const raw = window.localStorage.getItem(SOURCE_KEY);
-    if (raw === 'hf-mirror' || raw === 'hf-official') return raw;
+    if (raw === 'modelscope' || raw === 'hf-official') return raw;
   } catch {
     /* 忽略 */
   }
-  return 'hf-mirror';
+  return DEFAULT_MODEL_SOURCE;
 }
 
 /** 持久化并应用模型源（切换后需重新加载模型才会生效） */
@@ -129,13 +130,16 @@ export async function loadLocalModel(
       // 允许跨域加载模型资源
       env.allowLocalModels = false;
 
-      // 指向国内镜像源（hf-mirror.com），显著提升下载速度。
-      // remotePathTemplate 保持默认的 {model}/resolve/{revision}/ 形式。
+      // 指向国内模型源（默认阿里巴巴魔搭社区），显著提升下载速度。
+      // 魔搭的仓库路径比 HF 多一层 models/，且默认分支叫 master，
+      // 因此 remoteHost 与 remotePathTemplate 需要按源分别设置。
       const source = findModelSource(readModelSource());
       env.remoteHost = source.host;
+      env.remotePathTemplate = source.pathTemplate;
 
       const instance = await pipeline('text-generation', modelId, {
         dtype: 'q4',
+        revision: source.revision,
         progress_callback: (p: unknown) => {
           const info = p as {
             status?: string;

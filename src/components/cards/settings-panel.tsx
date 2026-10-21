@@ -159,7 +159,7 @@ function AiEngineSettings() {
 
       <SettingRow
         title="模型下载源"
-        desc="默认走国内镜像加速，下载更快更稳定"
+        desc="默认走阿里巴巴魔搭社区（国内），下载更快更稳定"
       >
         <div className="flex flex-col gap-1.5">
           {MODEL_SOURCES.map((s) => {

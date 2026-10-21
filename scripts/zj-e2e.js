@@ -360,6 +360,53 @@ function log(ok, name, extra = '') {
       `${radiusBefore} → ${radiusAfter}`,
     );
 
+    // 通知动画：从右侧飞入 → 3 秒后向右飞出；多条并存时向下排列
+    const toastGeo = await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('[data-zj-toast]'));
+      return {
+        vw: window.innerWidth,
+        items: els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, top: r.top, w: r.width };
+        }),
+      };
+    });
+    log(
+      toastGeo.items.length > 0 &&
+        toastGeo.items.every((t) => t.left + t.w >= toastGeo.vw - 60),
+      '通知从右侧飞入（贴右侧边缘）',
+      JSON.stringify(toastGeo.items),
+    );
+
+    // 再触发一条通知，检查多条向下排列
+    await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const sec = Array.from(dlg.querySelectorAll('section')).find((s) =>
+        s.textContent.includes('圆角'),
+      );
+      const btn = Array.from(sec.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === '常规',
+      );
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(700);
+    const multiToast = await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('[data-zj-toast]'));
+      return els.map((el) => Math.round(el.getBoundingClientRect().top));
+    });
+    log(
+      multiToast.length >= 2 && multiToast[1] > multiToast[0],
+      '多条通知向下排列',
+      JSON.stringify(multiToast),
+    );
+
+    // 3 秒后自动向右飞出（消失）
+    await page.waitForTimeout(3600);
+    const toastLeft = await page.evaluate(
+      () => document.querySelectorAll('[data-zj-toast]').length,
+    );
+    log(toastLeft === 0, '通知 3 秒后自动消失（向右飞出）', `剩余 ${toastLeft} 条`);
+
     // 切换到大档，验证根字号变化
     const beforeFont = await page.$eval(
       'html',
@@ -499,9 +546,9 @@ function log(ok, name, extra = '') {
 
     const aiPanel = await page.textContent('[role="dialog"]');
     log(
-      (aiPanel ?? '').includes('HF 镜像') &&
+      (aiPanel ?? '').includes('魔搭社区') &&
         (aiPanel ?? '').includes('HuggingFace 官方'),
-      '本地模型提供国内镜像与官方源切换',
+      '本地模型提供阿里巴巴魔搭社区与官方源切换',
     );
     log(
       (aiPanel ?? '').includes('Qwen1.5 0.5B') &&
@@ -680,8 +727,13 @@ function log(ok, name, extra = '') {
       '个性化提供 .theme 主题包导入入口',
     );
     log(
-      (personalizationText ?? '').includes('广场主题包'),
-      '个性化提供广场主题包区域',
+      !(personalizationText ?? '').includes('广场主题包'),
+      '个性化已移除「广场主题包」区域',
+    );
+    log(
+      (personalizationText ?? '').includes('主题') &&
+        (personalizationText ?? '').includes('导入 .theme'),
+      '个性化提供「主题」分区与 .theme 导入入口',
     );
     await page.keyboard.press('Escape');
     await page.waitForTimeout(800);
@@ -732,6 +784,28 @@ function log(ok, name, extra = '') {
     log(
       !themeMarket.includes('内置主题'),
       '主题广场不再列出内置主题（仅展示仓库主题包）',
+    );
+
+    // 全局隐藏右侧（垂直）滚动条
+    const scrollbarHidden = await page.evaluate(() => {
+      const root = getComputedStyle(document.documentElement);
+      const probe = document.createElement('div');
+      probe.style.cssText =
+        'position:absolute;height:200px;width:100px;overflow-y:scroll;visibility:hidden';
+      document.body.appendChild(probe);
+      const w = probe.offsetWidth - probe.clientWidth;
+      probe.remove();
+      return {
+        scrollbarWidth: root.scrollbarWidth,
+        probeWidth: w,
+        webkitRule: !!document.querySelector('style'),
+      };
+    });
+    log(
+      scrollbarHidden.scrollbarWidth === 'none' &&
+        scrollbarHidden.probeWidth === 0,
+      '全局隐藏右侧滚动条（垂直方向不可见）',
+      JSON.stringify(scrollbarHidden),
     );
 
     // 主题包从后端仓库下载到前端（落地本地缓存，离线可用）

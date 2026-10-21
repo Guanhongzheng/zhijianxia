@@ -16,31 +16,52 @@ const COLORS = {
   error: 'text-red-500',
 } as const;
 
-/** 全局轻提示 */
+/**
+ * 全局轻提示
+ *
+ * - 从**右侧**以非线性缓动飞入
+ * - 3 秒后自动**向右**飞出
+ * - 多条提示并存时**向下排列**（最新的在最下方）
+ */
 export function Toast() {
-  const toast = useAppStore((s) => s.toast);
+  const toasts = useAppStore((s) => s.toasts);
+  const dismissToast = useAppStore((s) => s.dismissToast);
 
   return (
-    <AnimatePresence>
-      {toast && (
-        <motion.div
-          key={toast.id}
-          initial={{ opacity: 0, y: 16, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 8, scale: 0.98 }}
-          transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="fixed bottom-6 left-1/2 z-[100] -translate-x-1/2"
-          role="status"
-        >
-          <div className="zj-card flex items-center gap-2.5 px-4 py-2.5">
-            {(() => {
-              const Icon = ICONS[toast.type];
-              return <Icon className={`size-4 shrink-0 ${COLORS[toast.type]}`} />;
-            })()}
-            <span className="text-sm">{toast.text}</span>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div
+      className="pointer-events-none fixed right-4 bottom-4 z-[100] flex flex-col items-end gap-2"
+      role="status"
+      aria-live="polite"
+    >
+      <AnimatePresence initial={false}>
+        {toasts.map((toast) => {
+          const Icon = ICONS[toast.type];
+          return (
+            <motion.div
+              key={toast.id}
+              layout
+              data-zj-toast={toast.id}
+              initial={{ opacity: 0, x: 120, scale: 0.94 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 160, scale: 0.96 }}
+              transition={{
+                // 非线性缓动：入场稍慢、末段减速；出场更快
+                type: 'spring',
+                stiffness: 260,
+                damping: 26,
+                mass: 0.9,
+              }}
+              onClick={() => dismissToast(toast.id)}
+              className="pointer-events-auto cursor-pointer"
+            >
+              <div className="zj-card flex items-center gap-2.5 px-4 py-2.5">
+                <Icon className={`size-4 shrink-0 ${COLORS[toast.type]}`} />
+                <span className="text-sm">{toast.text}</span>
+              </div>
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
   );
 }
