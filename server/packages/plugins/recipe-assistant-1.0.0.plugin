@@ -1,0 +1,25 @@
+{
+  "format": "zhijianxia.plugin",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "recipe-assistant",
+    "name": "AI 简易食谱助手",
+    "version": "1.0.0",
+    "description": "输入冰箱里现有的食材，AI 推荐可做的家常菜谱，包含用料、步骤与耗时。",
+    "category": "生活",
+    "author": "智简匣",
+    "icon": "ChefHat",
+    "preview": "🍳",
+    "tags": [
+      "食谱",
+      "做饭",
+      "AI"
+    ],
+    "minCoreVersion": "1.0.0",
+    "builtin": false,
+    "offline": true
+  },
+  "core": {
+    "minVersion": "1.0.0"
+  }
+}

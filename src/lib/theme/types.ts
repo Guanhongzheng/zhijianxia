@@ -27,6 +27,16 @@ export interface ThemePack {
   nav?: ThemeNavStyle;
   /** 主题分类：综合 / 配色 / 卡片 / 导航栏 / 壁纸 / 图标 */
   category?: string;
+  /** 主题简介（.theme 信封 manifest.description） */
+  description?: string;
+  /** 作者 */
+  author?: string;
+  /** 预览标识（emoji） */
+  preview?: string;
+  /** 标签 */
+  tags?: string[];
+  /** 语义化版本 */
+  version?: string;
   createdAt?: number;
 }
 

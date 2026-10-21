@@ -1,0 +1,25 @@
+{
+  "format": "zhijianxia.plugin",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "pomodoro",
+    "name": "番茄专注计时器",
+    "version": "1.0.0",
+    "description": "25 分钟专注 + 5 分钟休息的环形计时器，支持 AI 生成专注计划，与音乐播放器联动。",
+    "category": "效率",
+    "author": "智简匣",
+    "icon": "ListChecks",
+    "preview": "🍅",
+    "tags": [
+      "专注",
+      "计时",
+      "效率"
+    ],
+    "minCoreVersion": "1.0.0",
+    "builtin": false,
+    "offline": true
+  },
+  "core": {
+    "minVersion": "1.0.0"
+  }
+}

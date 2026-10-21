@@ -8,6 +8,7 @@
  */
 
 import { backendFetch, type LanConfig, BackendOfflineError } from './client';
+import { createThemePackage } from '@/lib/theme/packager';
 import type { ThemePack } from '@/lib/theme/types';
 
 // ---------------------------------------------------------------------------
@@ -159,12 +160,24 @@ export async function uploadRegistryPlugin(
   return res.plugin;
 }
 
-/** 上传主题包到后端仓库（管理员） */
+/**
+ * 上传主题包到后端仓库（管理员）
+ *
+ * 发送标准 `.theme` 信封（format / manifest / pack），
+ * 后端落盘为 `server/packages/themes/<id>-<version>.theme`。
+ */
 export async function uploadRegistryTheme(
   cfg: LanConfig,
   token: string,
   pack: ThemePack,
 ): Promise<RegistryTheme> {
+  const envelope = createThemePackage(pack, {
+    description: pack.description ?? '',
+    author: pack.author ?? '',
+    preview: pack.preview ?? '🎨',
+    tags: pack.tags ?? [],
+    category: pack.category ?? '综合',
+  });
   const res = await backendFetch<{ theme?: RegistryTheme }>(
     cfg,
     '/api/registry/themes',
@@ -174,7 +187,7 @@ export async function uploadRegistryTheme(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ pack }),
+      body: JSON.stringify({ package: envelope }),
     },
   );
   if (!res.theme) {

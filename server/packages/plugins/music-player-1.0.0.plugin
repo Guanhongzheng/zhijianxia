@@ -1,0 +1,25 @@
+{
+  "format": "zhijianxia.plugin",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "music-player",
+    "name": "极简随身音乐播放器",
+    "version": "1.0.0",
+    "description": "内置 WebAudio 合成曲库与本地音频导入，支持播放控制、循环模式、AI 场景推荐与番茄钟联动。",
+    "category": "生活",
+    "author": "智简匣",
+    "icon": "Disc3",
+    "preview": "🎧",
+    "tags": [
+      "音乐",
+      "专注",
+      "AI"
+    ],
+    "minCoreVersion": "1.0.0",
+    "builtin": false,
+    "offline": true
+  },
+  "core": {
+    "minVersion": "1.0.0"
+  }
+}

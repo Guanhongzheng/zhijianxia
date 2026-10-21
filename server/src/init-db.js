@@ -10,6 +10,7 @@
  *   - 全部使用 CREATE TABLE IF NOT EXISTS / INSERT ... WHERE NOT EXISTS，可重复执行
  *   - 管理员 uid 固定为 ZJ-ADMIN01，昵称「管理员」，密码 admin123
  *   - 用户已存在则跳过，不覆盖已有数据
+ *   - 插件包 / 主题包种子写入**后端包目录**（server/packages/），不落数据库
  */
 
 const fs = require('node:fs');
@@ -20,8 +21,15 @@ const { hashPassword } = require('./auth');
 const {
   validatePluginPackage,
   validateThemePack,
-  joinTags,
 } = require('./routes/registry-validate');
+const {
+  ensureDirs,
+  listPluginPackages,
+  listThemePackages,
+  writePluginPackage,
+  writeThemePackage,
+  PACKAGES_DIR,
+} = require('./packages');
 
 /** 项目根目录（server/src 的上上级） */
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
@@ -96,93 +104,20 @@ const SCHEMA = [
      value TEXT NOT NULL DEFAULT ''
    )`,
 
-  // 插件包仓库：存放可下载的 .plugin 包
-  `CREATE TABLE IF NOT EXISTS plugin_packages (
-     id               TEXT    PRIMARY KEY,
-     name             TEXT    NOT NULL,
-     version          TEXT    NOT NULL,
-     category         TEXT    NOT NULL,
-     description      TEXT    NOT NULL DEFAULT '',
-     author           TEXT    NOT NULL DEFAULT '',
-     preview          TEXT    NOT NULL DEFAULT '🧩',
-     tags             TEXT    NOT NULL DEFAULT '',
-     size_kb          INTEGER NOT NULL DEFAULT 0,
-     builtin          INTEGER NOT NULL DEFAULT 0,
-     offline          INTEGER NOT NULL DEFAULT 1,
-     min_core_version TEXT    NOT NULL DEFAULT '1.0.0',
-     manifest_json    TEXT    NOT NULL,
-     package_json     TEXT    NOT NULL,
-     created_at       INTEGER NOT NULL
-   )`,
-
-  // 主题包仓库：存放可下载的 .theme 包
-  `CREATE TABLE IF NOT EXISTS theme_packages (
-     id          TEXT    PRIMARY KEY,
-     name        TEXT    NOT NULL,
-     version     TEXT    NOT NULL DEFAULT '1.0.0',
-     category    TEXT    NOT NULL DEFAULT '通用',
-     description TEXT    NOT NULL DEFAULT '',
-     author      TEXT    NOT NULL DEFAULT '',
-     preview     TEXT    NOT NULL DEFAULT '🎨',
-     tags        TEXT    NOT NULL DEFAULT '',
-     pack_json   TEXT    NOT NULL,
-     created_at  INTEGER NOT NULL
-   )`,
-
   // 常用查询索引
   `CREATE INDEX IF NOT EXISTS idx_sessions_user    ON sessions(user_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_friends_user     ON friends(user_uid)`,
+  `CREATE INDEX IF NOT EXISTS idx_friends_user     ON friends(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_friends_friend   ON friends(friend_uid)`,
   `CREATE INDEX IF NOT EXISTS idx_members_group    ON group_members(group_id)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_target  ON messages(scope, target, created_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_plugins_order    ON plugin_packages(category, name)`,
-  `CREATE INDEX IF NOT EXISTS idx_themes_order     ON theme_packages(name)`,
 ];
 
 /** 建表（幂等） */
 function createSchema() {
   for (const sql of SCHEMA) run(sql);
-  migrateSchema();
-}
-
-/**
- * 增量迁移：为已存在的库补齐后加的列。
- * SQLite 不支持 ADD COLUMN IF NOT EXISTS，这里先查列再决定是否 ALTER。
- */
-function migrateSchema() {
-  /** 补齐一列（若不存在） */
-  const ensureColumn = (table, column, ddl) => {
-    const cols = all(`PRAGMA table_info(${table})`);
-    if (cols.some((c) => c.name === column)) return false;
-    run(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
-    return true;
-  };
-
-  // 主题包新增分类字段（用于广场中的主题分类筛选）
-  ensureColumn('theme_packages', 'category', "TEXT NOT NULL DEFAULT '综合'");
-
-  // 历史数据清洗：旧库的分类默认值是「通用」，统一为「综合」
-  run("UPDATE theme_packages SET category = '综合' WHERE category IS NULL OR category = '' OR category = '通用'");
-
-  // 旧主题包补齐 brand / card / nav 三段（缺失时按内置主题的默认值填充）
-  const rows = all('SELECT id, pack_json FROM theme_packages');
-  for (const row of rows) {
-    let pack;
-    try {
-      pack = JSON.parse(row.pack_json);
-    } catch {
-      continue;
-    }
-    if (!pack || typeof pack !== 'object') continue;
-    if (pack.brand && pack.card && pack.nav) continue;
-
-    const seed = THEME_PACK_SEEDS.find((s) => s.id === row.id);
-    pack.brand = pack.brand ?? seed?.brand ?? { icon: '📦', name: '智简匣', tagline: '本地离线 AI 工具箱' };
-    pack.card = pack.card ?? seed?.card ?? { style: 'elevated', borderWidth: 1 };
-    pack.nav = pack.nav ?? seed?.nav ?? { style: 'flat', showIcon: true };
-    pack.category = pack.category ?? seed?.category ?? '综合';
-    run('UPDATE theme_packages SET pack_json = ?, category = ? WHERE id = ?', JSON.stringify(pack), pack.category, row.id);
-  }
+  // 旧库中的包表已废弃（包仓库改为文件存储），清理掉
+  run('DROP TABLE IF EXISTS plugin_packages');
+  run('DROP TABLE IF EXISTS theme_packages');
 }
 
 /**
@@ -342,73 +277,39 @@ function readDistPlugins() {
 }
 
 /**
- * 写入插件包种子（幂等）：已存在同 id 则跳过，不覆盖用户后来上传的版本
+ * 写入插件包种子到后端包目录（幂等）：已存在同 id 则跳过，不覆盖用户后来上传的版本
  * @returns {number} 本次新增数量
  */
 function seedPluginPackages() {
+  ensureDirs();
   let created = 0;
+  const existing = new Set(listPluginPackages().map((p) => p.id));
+
   for (const item of readDistPlugins()) {
-    const exists = get('SELECT id FROM plugin_packages WHERE id = ?', item.id);
-    if (exists) continue;
-
-    const packageJson = item.text;
-    const manifestJson = JSON.stringify(item.pkg.manifest);
-    const sizeKB = Math.round(Buffer.byteLength(packageJson, 'utf8') / 1024);
-
-    run(
-      `INSERT INTO plugin_packages
-         (id, name, version, category, description, author, preview, tags, size_kb,
-          builtin, offline, min_core_version, manifest_json, package_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      item.id,
-      item.name,
-      item.version,
-      item.category,
-      item.description,
-      item.author,
-      item.preview,
-      joinTags(item.tags),
-      sizeKB,
-      item.builtin,
-      item.offline,
-      item.minCoreVersion,
-      manifestJson,
-      packageJson,
-      Date.now()
-    );
+    if (existing.has(item.id)) continue;
+    const written = writePluginPackage(item.pkg);
+    if (!written.ok) continue;
     created += 1;
   }
   return created;
 }
 
 /**
- * 写入主题包种子（幂等）：已存在同 id 则跳过
+ * 写入主题包种子到后端包目录（幂等）：已存在同 id 则跳过
  * @returns {number} 本次新增数量
  */
 function seedThemePackages() {
+  ensureDirs();
   let created = 0;
+  const existing = new Set(listThemePackages().map((t) => t.id));
+
   for (const pack of THEME_PACK_SEEDS) {
     const check = validateThemePack(pack);
     if (!check.ok) continue;
+    if (existing.has(pack.id)) continue;
 
-    const exists = get('SELECT id FROM theme_packages WHERE id = ?', pack.id);
-    if (exists) continue;
-
-    run(
-      `INSERT INTO theme_packages
-         (id, name, version, category, description, author, preview, tags, pack_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      pack.id,
-      pack.name,
-      pack.version,
-      check.data.category,
-      pack.description,
-      pack.author,
-      pack.preview,
-      joinTags(pack.tags),
-      JSON.stringify(pack),
-      Date.now()
-    );
+    const written = writeThemePackage(pack);
+    if (!written.ok) continue;
     created += 1;
   }
   return created;
@@ -476,14 +377,15 @@ if (require.main === module) {
     const result = initDatabase();
     const userCount = get('SELECT COUNT(*) AS c FROM users').c;
     const noticeCount = get('SELECT COUNT(*) AS c FROM notices').c;
-    const pluginCount = get('SELECT COUNT(*) AS c FROM plugin_packages').c;
-    const themeCount = get('SELECT COUNT(*) AS c FROM theme_packages').c;
+    const pluginCount = listPluginPackages().length;
+    const themeCount = listThemePackages().length;
     console.log('[init-db] 数据库初始化完成');
     console.log(`[init-db] 管理员${result.adminCreated ? '已创建' : '已存在，跳过'}（uid: ZJ-ADMIN01 / 密码: admin123）`);
     console.log(`[init-db] 示例公告${result.noticeCreated ? '已创建' : '已存在，跳过'}`);
     console.log(`[init-db] 插件包种子新增 ${result.pluginsCreated} 个（当前共 ${pluginCount} 个）`);
     console.log(`[init-db] 主题包种子新增 ${result.themesCreated} 个（当前共 ${themeCount} 个）`);
     console.log(`[init-db] 当前统计：用户 ${userCount} 个，公告 ${noticeCount} 条`);
+    console.log(`[init-db] 包仓库目录：${PACKAGES_DIR}`);
     const { DB_FILE } = require('./db');
     console.log(`[init-db] 数据库文件：${DB_FILE}`);
   } catch (err) {

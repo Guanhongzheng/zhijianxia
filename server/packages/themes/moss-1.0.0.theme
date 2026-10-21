@@ -1,0 +1,80 @@
+{
+  "format": "zhijianxia.theme",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "moss",
+    "name": "青苔",
+    "version": "1.0.0",
+    "description": "自然绿意主题：苔绿主色搭配米白与深林底色，适合长时间阅读。",
+    "author": "智简匣",
+    "preview": "🌿",
+    "tags": [
+      "自然",
+      "绿色",
+      "护眼"
+    ],
+    "category": "配色"
+  },
+  "pack": {
+    "id": "moss",
+    "name": "青苔",
+    "version": "1.0.0",
+    "description": "自然绿意主题：苔绿主色搭配米白与深林底色，适合长时间阅读。",
+    "author": "智简匣",
+    "preview": "🌿",
+    "tags": [
+      "自然",
+      "绿色",
+      "护眼"
+    ],
+    "category": "配色",
+    "brand": {
+      "icon": "🌿",
+      "name": "智简匣",
+      "tagline": "本地离线 AI 工具箱"
+    },
+    "card": {
+      "style": "elevated",
+      "borderWidth": 1,
+      "accentBar": true
+    },
+    "nav": {
+      "style": "flat",
+      "showIcon": true
+    },
+    "light": {
+      "accent": "#0f9d76",
+      "accentSoft": "#e4f6f0",
+      "card": "#ffffff",
+      "bg": "#f4f8f6",
+      "fg": "#16241f",
+      "mutedFg": "#5f7a71",
+      "border": "#e0eae6",
+      "radius": 20,
+      "shadow": 1
+    },
+    "dark": {
+      "accent": "#3ddc9a",
+      "accentSoft": "#152a24",
+      "card": "#141c19",
+      "bg": "#0c1210",
+      "fg": "#e4f1ec",
+      "mutedFg": "#8aa79d",
+      "border": "#22302b",
+      "radius": 20,
+      "shadow": 1
+    },
+    "wallpaper": {
+      "light": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(160deg,#e4f6f0 0%,#f4f8f6 70%)",
+        "veil": 0.88
+      },
+      "dark": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(160deg,#0f2019 0%,#0c1210 70%)",
+        "veil": 0.9
+      }
+    }
+  }
+}

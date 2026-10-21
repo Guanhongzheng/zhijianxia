@@ -1,0 +1,79 @@
+{
+  "format": "zhijianxia.theme",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "violet-night",
+    "name": "夜堇",
+    "version": "1.0.0",
+    "description": "暗色紫调主题：堇紫主色搭配深紫夜色，柔和光晕适合夜间使用。",
+    "author": "智简匣",
+    "preview": "🌙",
+    "tags": [
+      "暗色",
+      "紫色",
+      "夜间"
+    ],
+    "category": "综合"
+  },
+  "pack": {
+    "id": "violet-night",
+    "name": "夜堇",
+    "version": "1.0.0",
+    "description": "暗色紫调主题：堇紫主色搭配深紫夜色，柔和光晕适合夜间使用。",
+    "author": "智简匣",
+    "preview": "🌙",
+    "tags": [
+      "暗色",
+      "紫色",
+      "夜间"
+    ],
+    "category": "综合",
+    "brand": {
+      "icon": "🌙",
+      "name": "智简匣",
+      "tagline": "本地离线 AI 工具箱"
+    },
+    "card": {
+      "style": "glass",
+      "borderWidth": 1
+    },
+    "nav": {
+      "style": "glass",
+      "showIcon": true
+    },
+    "light": {
+      "accent": "#8b5cf6",
+      "accentSoft": "#f1ebfe",
+      "card": "#ffffff",
+      "bg": "#f8f7fb",
+      "fg": "#221a33",
+      "mutedFg": "#6f6785",
+      "border": "#e8e4f0",
+      "radius": 24,
+      "shadow": 1
+    },
+    "dark": {
+      "accent": "#b794f6",
+      "accentSoft": "#241f36",
+      "card": "#191624",
+      "bg": "#100e18",
+      "fg": "#ece7f6",
+      "mutedFg": "#9a90b5",
+      "border": "#282238",
+      "radius": 24,
+      "shadow": 1
+    },
+    "wallpaper": {
+      "light": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(150deg,#f1ebfe 0%,#f8f7fb 70%)",
+        "veil": 0.9
+      },
+      "dark": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(150deg,#1b1530 0%,#100e18 70%)",
+        "veil": 0.9
+      }
+    }
+  }
+}

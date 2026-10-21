@@ -1,0 +1,25 @@
+{
+  "format": "zhijianxia.plugin",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "unit-converter",
+    "name": "单位换算小工具",
+    "version": "1.0.0",
+    "description": "用自然语言提问即可完成长度、重量、温度等单位换算，AI 识别语义，本地兜底换算表应对离线。",
+    "category": "工具",
+    "author": "智简匣",
+    "icon": "Calculator",
+    "preview": "🧮",
+    "tags": [
+      "换算",
+      "工具",
+      "AI"
+    ],
+    "minCoreVersion": "1.0.0",
+    "builtin": false,
+    "offline": true
+  },
+  "core": {
+    "minVersion": "1.0.0"
+  }
+}

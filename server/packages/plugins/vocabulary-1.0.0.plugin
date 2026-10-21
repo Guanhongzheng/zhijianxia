@@ -1,0 +1,26 @@
+{
+  "format": "zhijianxia.plugin",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "vocabulary",
+    "name": "AI 生词本",
+    "version": "1.0.0",
+    "description": "添加单词即可由 AI 生成释义、例句与记忆口诀，卡片翻面式记忆，全部数据保存在本机。",
+    "category": "学习",
+    "author": "智简匣",
+    "icon": "BookOpen",
+    "preview": "📖",
+    "tags": [
+      "英语",
+      "单词",
+      "记忆",
+      "AI"
+    ],
+    "minCoreVersion": "1.0.0",
+    "builtin": false,
+    "offline": true
+  },
+  "core": {
+    "minVersion": "1.0.0"
+  }
+}

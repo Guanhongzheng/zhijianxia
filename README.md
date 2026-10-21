@@ -53,13 +53,17 @@
 
 ### 插件包与主题包仓库
 
-插件包与主题包统一存放在**后端 SQLite**（`plugin_packages` / `theme_packages` 表），
+插件包与主题包统一存放在**后端包目录**（文件系统即仓库），
 局域网内任意设备都能浏览、下载、分享。
 
 | 层 | 位置 | 作用 |
 |----|------|------|
-| **仓库** | 后端 SQLite | 权威来源，存放包本体与元数据 |
+| **仓库** | `server/packages/plugins/*.plugin`<br>`server/packages/themes/*.theme` | 权威来源，包文件即本体 |
 | **本地缓存** | IndexedDB / LocalStorage | 每台设备下载后的副本，**离线可用** |
+
+> 包文件是**唯一权威来源**，不落数据库。
+> 直接往 `server/packages/` 下丢 `.plugin` / `.theme` 文件，重启后端即可被广场浏览到；
+> 通过广场「上传」写入的包同样落到这两个目录。
 
 **插件包（`.plugin`）与主题包（`.theme`）都是打包文件**，采用同款「信封 + 载荷」结构：
 
@@ -92,8 +96,8 @@
 ```
 
 > **主题包在外部制作**（设计工具或手工编辑 JSON），
-> 应用内提供「导入 .theme」「从广场下载」「导出」「上传」，
-> 以及设置 → 个性化中的**主题定制**（直接改图标 / 卡片 / 导航栏 / 配色 / 壁纸）。
+> 应用内只提供「导入 .theme」「从广场下载」「导出」「上传」，
+> 图标 / 卡片 / 导航栏 / 配色 / 壁纸等定制项**只能在主题包里定义**，前端不提供制作界面。
 
 **主题包可定制的维度**（`brand` / `card` / `nav` 三段均为**可选**，缺省时按默认值补全）：
 
@@ -171,7 +175,7 @@ Key 永不回传前端，接口只返回 `hasKey` 布尔值。
 - 壁纸由主题包决定，支持内置纯色渐变、内置图片、用户自定义上传
 - 主题配置分层存储：LocalStorage（主题包定义 + 当前 ID）+ IndexedDB（壁纸二进制）
 - 刷新页面自动恢复上次的主题包与模式
-- 设置 → 个性化 → **主题定制**：可直接改当前主题包的图标、卡片风格、导航栏风格、主色与壁纸，改动另存为自定义主题包
+- **前端不提供主题制作界面**：图标 / 卡片 / 导航栏 / 配色 / 壁纸等定制项在外部制作的 `.theme` 包中定义，导入或从广场下载后生效
 
 ### 两页滚动吸附布局
 
@@ -518,12 +522,16 @@ zhijianxia/
 │
 ├── server/                         # ⭐ 可选后端
 │   ├── package.json
+│   ├── packages/                  # ⭐ 包仓库（文件系统即仓库）
+│   │   ├── plugins/               #   *.plugin 插件包
+│   │   └── themes/                #   *.theme 主题包
 │   └── src/
 │       ├── index.js                # Express + ws 启动
 │       ├── db.js                   # node:sqlite 封装
-│       ├── init-db.js              # 建表 + 种子数据
+│       ├── init-db.js              # 建表 + 种子数据（包种子写入 server/packages/）
+│       ├── packages.js             # 包仓库的文件存储层
 │       ├── auth.js                 # 会话 token
-│       ├── routes/                 # auth / notices / friends / groups / messages / ai-proxy
+│       ├── routes/                 # auth / notices / friends / groups / messages / ai-proxy / registry
 │       └── ws/hub.js               # WebSocket 连接管理
 │
 ├── scripts/

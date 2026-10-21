@@ -1,0 +1,25 @@
+{
+  "format": "zhijianxia.plugin",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "text-summary",
+    "name": "AI 文本摘要摘录",
+    "version": "1.0.0",
+    "description": "粘贴长文本，AI 一键提炼要点、生成结构化笔记或一句话总结，历史记录保存在本机。",
+    "category": "效率",
+    "author": "智简匣",
+    "icon": "Scissors",
+    "preview": "📝",
+    "tags": [
+      "摘要",
+      "笔记",
+      "AI"
+    ],
+    "minCoreVersion": "1.0.0",
+    "builtin": false,
+    "offline": true
+  },
+  "core": {
+    "minVersion": "1.0.0"
+  }
+}
