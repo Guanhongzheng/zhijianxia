@@ -27,7 +27,6 @@ const {
   listPluginPackages,
   listThemePackages,
   writePluginPackage,
-  writeThemePackage,
   PACKAGES_DIR,
 } = require('./packages');
 
@@ -120,124 +119,6 @@ function createSchema() {
   run('DROP TABLE IF EXISTS theme_packages');
 }
 
-/**
- * 内置主题包种子（配色与圆角阴影参考 src/lib/theme/types.ts 的 BUILTIN_THEME_PACKS）
- * 字段严格按「主题包结构」填写：id / name / light / dark / wallpaper
- * 另附 version / description / author / preview / tags 等展示用元信息
- */
-const THEME_PACK_SEEDS = [
-  {
-    id: 'ink-default',
-    name: '素墨',
-    version: '1.0.0',
-    description: '默认主题：靛蓝主色 + 柔和浅灰底，明暗两套配色均衡耐看。',
-    author: '智简匣',
-    preview: '🖋️',
-    tags: ['默认', '靛蓝', '简约'],
-    category: '综合',
-    brand: { icon: '🖋️', name: '智简匣', tagline: '本地离线 AI 工具箱' },
-    card: { style: 'elevated', borderWidth: 1 },
-    nav: { style: 'flat', showIcon: true },
-    light: {
-      accent: '#4f6bed',
-      accentSoft: '#eef1fe',
-      card: '#ffffff',
-      bg: '#f6f7f9',
-      fg: '#1c1f24',
-      mutedFg: '#6b7280',
-      border: '#e6e8ec',
-      shadow: 2,
-    },
-    dark: {
-      accent: '#7d93ff',
-      accentSoft: '#1e2333',
-      card: '#171a20',
-      bg: '#0f1115',
-      fg: '#e8eaed',
-      mutedFg: '#9aa1ad',
-      border: '#262b34',
-      shadow: 2,
-    },
-    wallpaper: {
-      light: { kind: 'gradient', gradient: 'linear-gradient(135deg,#eef1fe 0%,#f6f7f9 60%)', veil: 0.9 },
-      dark: { kind: 'gradient', gradient: 'linear-gradient(135deg,#141824 0%,#0f1115 60%)', veil: 0.9 },
-    },
-  },
-  {
-    id: 'moss',
-    name: '青苔',
-    version: '1.0.0',
-    description: '自然绿意主题：苔绿主色搭配米白与深林底色，适合长时间阅读。',
-    author: '智简匣',
-    preview: '🌿',
-    tags: ['自然', '绿色', '护眼'],
-    category: '配色',
-    brand: { icon: '🌿', name: '智简匣', tagline: '本地离线 AI 工具箱' },
-    card: { style: 'elevated', borderWidth: 1, accentBar: true },
-    nav: { style: 'flat', showIcon: true },
-    light: {
-      accent: '#0f9d76',
-      accentSoft: '#e4f6f0',
-      card: '#ffffff',
-      bg: '#f4f8f6',
-      fg: '#16241f',
-      mutedFg: '#5f7a71',
-      border: '#e0eae6',
-      shadow: 1,
-    },
-    dark: {
-      accent: '#3ddc9a',
-      accentSoft: '#152a24',
-      card: '#141c19',
-      bg: '#0c1210',
-      fg: '#e4f1ec',
-      mutedFg: '#8aa79d',
-      border: '#22302b',
-      shadow: 1,
-    },
-    wallpaper: {
-      light: { kind: 'gradient', gradient: 'linear-gradient(160deg,#e4f6f0 0%,#f4f8f6 70%)', veil: 0.88 },
-      dark: { kind: 'gradient', gradient: 'linear-gradient(160deg,#0f2019 0%,#0c1210 70%)', veil: 0.9 },
-    },
-  },
-  {
-    id: 'violet-night',
-    name: '夜堇',
-    version: '1.0.0',
-    description: '暗色紫调主题：堇紫主色搭配深紫夜色，柔和光晕适合夜间使用。',
-    author: '智简匣',
-    preview: '🌙',
-    tags: ['暗色', '紫色', '夜间'],
-    category: '综合',
-    brand: { icon: '🌙', name: '智简匣', tagline: '本地离线 AI 工具箱' },
-    card: { style: 'glass', borderWidth: 1 },
-    nav: { style: 'glass', showIcon: true },
-    light: {
-      accent: '#8b5cf6',
-      accentSoft: '#f1ebfe',
-      card: '#ffffff',
-      bg: '#f8f7fb',
-      fg: '#221a33',
-      mutedFg: '#6f6785',
-      border: '#e8e4f0',
-      shadow: 1,
-    },
-    dark: {
-      accent: '#b794f6',
-      accentSoft: '#241f36',
-      card: '#191624',
-      bg: '#100e18',
-      fg: '#ece7f6',
-      mutedFg: '#9a90b5',
-      border: '#282238',
-      shadow: 1,
-    },
-    wallpaper: {
-      light: { kind: 'gradient', gradient: 'linear-gradient(150deg,#f1ebfe 0%,#f8f7fb 70%)', veil: 0.9 },
-      dark: { kind: 'gradient', gradient: 'linear-gradient(150deg,#1b1530 0%,#100e18 70%)', veil: 0.9 },
-    },
-  },
-];
 
 /**
  * 读取 dist-plugins 目录下的 .plugin 产物，作为插件包种子
@@ -289,24 +170,17 @@ function seedPluginPackages() {
 }
 
 /**
- * 写入主题包种子到后端包目录（幂等）：已存在同 id 则跳过
- * @returns {number} 本次新增数量
+ * 主题包不再做「种子写入」。
+ *
+ * 主题包以**文件夹**形式直接存在于 `server/packages/themes/<theme-id>/`，
+ * 由 `listThemePackages()` 扫描得出，文件夹本身就是唯一权威来源。
+ * 早期这里会把内置主题写成 `.theme` 单文件，导致用户删除主题后
+ * 每次启动都被重新写回来（删了又活），故移除。
+ *
+ * @returns {number} 恒为 0
  */
 function seedThemePackages() {
-  ensureDirs();
-  let created = 0;
-  const existing = new Set(listThemePackages().map((t) => t.id));
-
-  for (const pack of THEME_PACK_SEEDS) {
-    const check = validateThemePack(pack);
-    if (!check.ok) continue;
-    if (existing.has(pack.id)) continue;
-
-    const written = writeThemePackage(pack);
-    if (!written.ok) continue;
-    created += 1;
-  }
-  return created;
+  return 0;
 }
 
 /**

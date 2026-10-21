@@ -1,0 +1,24 @@
+:root {
+  /* ---- 基础色（与 theme.json 的 colors 一一对应）---- */
+  --bg: #f7f8fa;
+  --fg: #16181d;
+  --accent: #5b8def;
+  --card: #ffffff;
+  --border: #e6e8ee;
+
+  /* ---- 层次：靠灰度而非彩色区分 ---- */
+  --fg-muted: #6b7280;
+  --fg-subtle: #9aa1ac;
+
+  /* ---- 卡片：半透明白 + 中等偏大模糊 ---- */
+  --card-alpha: 0.72;
+  --card-blur: 20px;
+
+  /* ---- 边框：极淡，仅用于区分相邻卡片 ---- */
+  --border-alpha: 0.7;
+
+  /* ---- 字体栈 ---- */
+  --font-ui: "Microsoft YaHei", "PingFang SC", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: "Cascadia Mono", "SF Mono", Consolas, monospace;
+}

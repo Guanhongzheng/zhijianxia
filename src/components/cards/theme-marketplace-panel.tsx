@@ -43,9 +43,31 @@ import {
   uploadRegistryTheme,
   deleteRegistryTheme,
   type RegistryTheme,
+  type RemoteThemePackage,
 } from '@/lib/backend/registry';
+import { backendBaseUrl } from '@/lib/backend/client';
+import { protocolToThemePack } from '@/lib/theme/protocol';
 import { cacheTheme, removeCachedTheme } from '@/lib/registry-cache';
 import { cn } from '@/lib/utils';
+
+/**
+ * 把主题包内的相对资源路径解析为可访问的绝对 URL。
+ *
+ * 资源由后端以 `/theme-assets/<id>/assets/<file>` 提供，
+ * 但前端与后端通常不在同一端口（3000 vs 8787），
+ * 因此需要用后端基址补全，否则浏览器会去前端源上取资源。
+ */
+function resolveAssetUrl(
+  pkg: Extract<RemoteThemePackage, { format: 'zhijianxia.theme.dir' }>,
+  relativePath: string | undefined,
+): string | undefined {
+  if (!relativePath) return undefined;
+  const entry = pkg.assets?.[relativePath];
+  if (!entry?.url) return undefined;
+  if (/^https?:\/\//i.test(entry.url)) return entry.url;
+  const base = backendBaseUrl(useAppStore.getState().lan);
+  return `${base}${entry.url}`;
+}
 
 /** 分类 id -> 图标 */
 const CATEGORY_ICONS: Record<string, typeof Sparkles> = {
@@ -152,16 +174,25 @@ export function ThemeMarketplacePanel() {
     setDownloading(item.id);
     try {
       const raw = await fetchRegistryTheme(lan, token, item.id);
-      const pack = {
-        ...raw,
-        id: raw.id || item.id,
-        name: raw.name || item.name,
+      const pack =
+        raw.format === 'zhijianxia.theme.dir'
+          ? protocolToThemePack(raw.manifest, {
+              css: raw.css,
+              // 资源走后端静态服务，跨端口访问需补全为绝对地址
+              wallpaperUrl: resolveAssetUrl(raw, raw.manifest.wallpaper),
+              category: item.category,
+            })
+          : { ...raw.pack, builtin: false, category: item.category };
+      const next = {
+        ...pack,
+        id: pack.id || item.id,
+        name: pack.name || item.name,
         builtin: false,
       };
-      saveCustomPack(pack);
-      cacheTheme(pack);
-      applyThemePack(pack.id);
-      notify(`主题包「${pack.name}」已下载并应用`, 'success');
+      saveCustomPack(next);
+      cacheTheme(next);
+      applyThemePack(next.id);
+      notify(`主题包「${next.name}」已下载并应用`, 'success');
     } catch (err) {
       notify(err instanceof Error ? err.message : '主题包下载失败', 'error');
     } finally {

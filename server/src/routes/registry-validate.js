@@ -232,10 +232,138 @@ function validatePluginPackage(pkg) {
 
 /**
  * 校验主题包
+ *
+ * 支持两种 schema：
+ * - **protocol 1/2（文件夹制）**：单一 `colors` 对象（CSS 变量形式），
+ *   可选 `wallpaper` 字符串、`video` / `bgm` / `texts`（仅 protocol 2）
+ * - **旧版**：带 `light` / `dark` 两套变体
+ *
+ * 通过 `colors` 字段是否存在来区分。
+ *
  * @param {object} pack
  * @returns {{ok:true, data:object}|{ok:false, error:string}}
  */
 function validateThemePack(pack) {
+  if (!pack || typeof pack !== 'object' || Array.isArray(pack)) {
+    return { ok: false, error: '主题包格式不正确：pack 必须是一个对象' };
+  }
+  // 文件夹制（有 colors 字段）走独立分支
+  if (pack.colors && typeof pack.colors === 'object') {
+    return validateProtocolTheme(pack);
+  }
+  return validateLegacyTheme(pack);
+}
+
+/**
+ * 校验 protocol 1/2 主题（单一 colors 集合）
+ * @param {object} pack
+ * @returns {{ok:true, data:object}|{ok:false, error:string}}
+ */
+function validateProtocolTheme(pack) {
+  if (typeof pack.id !== 'string' || !ID_PATTERN.test(pack.id)) {
+    return {
+      ok: false,
+      error: `主题包 id 不合法："${pack.id}"，只能包含小写字母、数字与连字符`,
+    };
+  }
+  if (pack.id.length > 32) {
+    return { ok: false, error: '主题包 id 过长：不能超过 32 个字符' };
+  }
+  if (typeof pack.name !== 'string' || !pack.name.trim()) {
+    return { ok: false, error: '主题包 name（名称）不能为空' };
+  }
+  if (pack.version !== undefined && (typeof pack.version !== 'string' || !SEMVER_PATTERN.test(pack.version))) {
+    return { ok: false, error: `主题包 version 不合法："${pack.version}"，应为语义化版本（如 1.0.0）` };
+  }
+
+  // protocol：1 或 2，缺省视为 1
+  const protocol = pack.protocol ?? 1;
+  if (protocol !== 1 && protocol !== 2) {
+    return { ok: false, error: `主题包 protocol 只能是 1 或 2，实际为 ${protocol}` };
+  }
+
+  // colors：五个必需变量，格式均为 #RRGGBB
+  const REQUIRED_VARS = ['--bg', '--fg', '--accent', '--card', '--border'];
+  for (const key of REQUIRED_VARS) {
+    const v = pack.colors[key];
+    if (typeof v !== 'string' || !COLOR_PATTERN.test(v)) {
+      return {
+        ok: false,
+        error: `主题包 colors.${key} 不合法："${v}"，应为 #RRGGBB 形式`,
+      };
+    }
+  }
+
+  // 对比度质量要求：正文与背景至少 4.5:1
+  const bgL = relLuminance(pack.colors['--bg']);
+  const fgL = relLuminance(pack.colors['--fg']);
+  const ratio = contrastRatio(bgL, fgL);
+  if (ratio < 4.5) {
+    return {
+      ok: false,
+      error: `主题包对比度不足：--fg 与 --bg 的对比度为 ${ratio.toFixed(2)}:1，低于 4.5:1`,
+    };
+  }
+
+  // wallpaper 必须是相对路径字符串
+  if (pack.wallpaper !== undefined && typeof pack.wallpaper !== 'string') {
+    return { ok: false, error: '主题包 wallpaper 应为相对路径字符串' };
+  }
+
+  // protocol 2 专属字段：出现即校验，不允许在 protocol 1 中使用
+  if (protocol === 1) {
+    for (const key of ['video', 'bgm', 'texts']) {
+      if (pack[key] !== undefined) {
+        return {
+          ok: false,
+          error: `主题包 protocol 为 1，不支持字段 "${key}"（该字段仅 protocol:2 可用）`,
+        };
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    data: {
+      id: pack.id,
+      name: pack.name.trim(),
+      version: typeof pack.version === 'string' ? pack.version : '1.0.0',
+      description: typeof pack.description === 'string' ? pack.description : '',
+      author: typeof pack.author === 'string' ? pack.author : '',
+      preview: '🎨',
+      tags: normalizeTags(pack.tags),
+      category: normalizeThemeCategory(pack.category),
+      protocol,
+      colors: pack.colors,
+    },
+  };
+}
+
+/** sRGB 相对亮度（WCAG 定义） */
+function relLuminance(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return 0;
+  const n = parseInt(m[1], 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+
+/** 对比度（WCAG）：(L1+0.05)/(L2+0.05) */
+function contrastRatio(l1, l2) {
+  const hi = Math.max(l1, l2);
+  const lo = Math.min(l1, l2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/**
+ * 校验旧版主题包（带 light / dark 变体）
+ * @param {object} pack
+ * @returns {{ok:true, data:object}|{ok:false, error:string}}
+ */
+function validateLegacyTheme(pack) {
   if (!pack || typeof pack !== 'object' || Array.isArray(pack)) {
     return { ok: false, error: '主题包格式不正确：pack 必须是一个对象' };
   }

@@ -93,6 +93,10 @@ router.get('/themes', requireAuth, (req, res) => {
 
 /**
  * GET /api/registry/themes/:id —— 下载指定主题包内容
+ *
+ * 两种形态：
+ * - 文件夹制：返回 { format:'zhijianxia.theme.dir', manifest, css, assets }
+ * - 单文件信封制：返回 { format:'zhijianxia.theme', ...envelope }
  */
 router.get('/themes/:id', requireAuth, (req, res) => {
   const id = String(req.params.id || '').trim();
@@ -100,8 +104,22 @@ router.get('/themes/:id', requireAuth, (req, res) => {
 
   const found = store.readThemePackage(id);
   if (!found.ok) return res.status(404).json({ error: found.error });
-  const pkg = found.data.json;
-  return res.json({ pack: pkg.pack ?? pkg, package: pkg });
+
+  const data = found.data;
+
+  // 文件夹制：theme.json 原文 + theme.css + 资源索引
+  if (data.assets) {
+    return res.json({
+      format: 'zhijianxia.theme.dir',
+      manifest: data.json,
+      css: data.css ?? '',
+      assets: data.assets,
+    });
+  }
+
+  // 单文件信封制
+  const pkg = data.json;
+  return res.json({ format: 'zhijianxia.theme', ...pkg, pack: pkg.pack ?? pkg });
 });
 
 /**

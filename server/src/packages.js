@@ -140,17 +140,170 @@ function listPluginPackages() {
 }
 
 /**
- * 列出仓库中的全部主题包摘要
+ * 列出主题目录（my-theme/）下的文件夹式主题包。
+ *
+ * ## 为什么有两种形态
+ *
+ * 主题包历史上是「单文件信封」`{id}-{version}.theme`，现在新增**文件夹制**：
+ *
+ *   my-theme/
+ *   └── <theme-id>/← 文件夹名必须 == theme.json 的 id
+ *       ├── theme.json      必需
+ *       ├── theme.css       必需
+ *       └── assets/         可选（壁纸 / 视频 / BGM）
+ *
+ * 文件夹制的优势：资源与配置同处一个目录，可直接拷贝分发，
+ * 不必把二进制塞进 JSON 变成 base64。
+ *
+ * 两种形态共存，扫描时先列文件夹再列 .theme 文件，id 冲突时文件夹优先。
+ *
+ * @returns {{dir:string, id:string}[]} 按 id 排序
+ */
+function listThemeDirs() {
+  let names = [];
+  try {
+    names = fs
+      .readdirSync(THEMES_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const name of names.sort()) {
+    const dir = path.join(THEMES_DIR, name);
+    // 目录内必须有 theme.json 才算一个主题包，否则跳过
+    if (fs.existsSync(path.join(dir, 'theme.json'))) {
+      out.push({ dir, id: name });
+    }
+  }
+  return out;
+}
+
+/**
+ * 读取文件夹式主题包。
+ *
+ * 会做schema 校验（id 与文件夹名必须一致，否则拒绝加载 ——
+ * 这一条能防止多个主题互相覆盖或混淆）。
+ *
+ * @param {string} dir 主题目录绝对路径
+ * @param {string} dirName 目录名（用于校验 id 一致性）
+ * @returns {{ok:true, data:object}|{ok:false, error:string}}
+ */
+function readThemeDir(dir, dirName) {
+  const jsonPath = path.join(dir, 'theme.json');
+  let text;
+  try {
+    text = fs.readFileSync(jsonPath, 'utf8');
+  } catch {
+    return { ok: false, error: 'theme.json 读取失败' };
+  }
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return { ok: false, error: 'theme.json 不是有效的 JSON' };
+  }
+
+  // **关键约束**：文件夹名必须与 theme.json 的 id 完全一致
+  if (json.id !== dirName) {
+    return {
+      ok: false,
+      error: `文件夹名 "${dirName}" 与 theme.json 的 id "${json.id}" 不一致`,
+    };
+  }
+
+  // theme.css 必需
+  const cssPath = path.join(dir, 'theme.css');
+  if (!fs.existsSync(cssPath)) {
+    return { ok: false, error: '缺少必需的 theme.css' };
+  }
+  let css = '';
+  try {
+    css = fs.readFileSync(cssPath, 'utf8');
+  } catch {
+    return { ok: false, error: 'theme.css 读取失败' };
+  }
+
+  // 收集资源（相对 theme.json 的路径）
+  const assets = {};
+  const assetsDir = path.join(dir, 'assets');
+  let assetFiles = [];
+  try {
+    assetFiles = fs.readdirSync(assetsDir).filter((f) =>
+      fs.statSync(path.join(assetsDir, f)).isFile(),
+    );
+  } catch {
+    // assets/ 可选，不存在不算错
+  }
+  for (const f of assetFiles) {
+    const stat = fs.statSync(path.join(assetsDir, f));
+    assets[`assets/${f}`] = {
+      size: stat.size,
+      // 资源以独立 URL 提供；路径与 theme.json 中的相对路径保持一致
+      url: `/theme-assets/${dirName}/assets/${f}`,
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      text,
+      json,
+      css,
+      assets,
+      dir,
+      sizeKB: calcSizeKB(text),
+    },
+  };
+}
+
+/**
+ * 列出仓库中的全部主题包摘要（文件夹制 + 单文件信封制）
  * @returns {object[]}
  */
 function listThemePackages() {
   ensureDirs();
   const list = [];
+  const seen = new Set();
+
+  // 1) 文件夹制（优先级更高）
+  for (const { dir, id } of listThemeDirs()) {
+    const parsed = readThemeDir(dir, id);
+    if (!parsed.ok) {
+      console.warn(`[zj] 跳过主题目录 ${id}：${parsed.error}`);
+      continue;
+    }
+    const d = parsed.data.json;
+    const check = validateThemePack(d);
+    if (!check.ok) {
+      console.warn(`[zj] 跳过主题 ${id}：${check.error}`);
+      continue;
+    }
+    seen.add(d.id);
+    list.push({
+      id: d.id,
+      name: d.name,
+      version: typeof d.version === 'string' ? d.version : '1.0.0',
+      category: check.data.category,
+      description: typeof d.description === 'string' ? d.description : '',
+      author: typeof d.author === 'string' ? d.author : '',
+      preview: '🎨',
+      tags: check.data.tags,
+      createdAt: statCreatedAt(path.join(dir, 'theme.json')),
+      protocol: typeof d.protocol === 'number' ? d.protocol : 1,
+      source: 'dir',
+    });
+  }
+
+  // 2) 单文件信封制（向后兼容）
   for (const file of listPackageFiles(THEMES_DIR, '.theme')) {
     const parsed = readPackageFile(file);
     if (!parsed.ok) continue;
     const pkg = parsed.data.json;
     const pack = pkg.pack ?? pkg;
+    // 与文件夹制 id 冲突时以文件夹为准
+    if (seen.has(pack.id)) continue;
     const check = validateThemePack(pack);
     if (!check.ok) continue;
     const d = check.data;
@@ -165,8 +318,11 @@ function listThemePackages() {
       preview: manifest.preview ?? d.preview,
       tags: manifest.tags?.length ? manifest.tags : d.tags,
       createdAt: statCreatedAt(file),
+      protocol: 1,
+      source: 'file',
     });
   }
+
   return list;
 }
 
@@ -190,12 +346,21 @@ function readPluginPackage(id) {
 }
 
 /**
- * 读取指定主题包文件内容
+ * 读取指定主题包内容（同时支持文件夹制与单文件信封制）
  * @param {string} id 主题 id
- * @returns {{ok:true, data:{json:object, text:string}}|{ok:false, error:string}}
+ * @returns {{ok:true, data:object}|{ok:false, error:string}}
  */
 function readThemePackage(id) {
   ensureDirs();
+
+  // 1) 文件夹制优先
+  const dirEntry = listThemeDirs().find((e) => e.id === id);
+  if (dirEntry) {
+    const parsed = readThemeDir(dirEntry.dir, dirEntry.id);
+    if (parsed.ok) return { ok: true, data: parsed.data };
+  }
+
+  // 2) 回退到单文件信封制
   const found = listPackageFiles(THEMES_DIR, '.theme').find((f) => {
     const parsed = readPackageFile(f);
     if (!parsed.ok) return false;

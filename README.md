@@ -58,14 +58,102 @@
 
 | 层 | 位置 | 作用 |
 |----|------|------|
-| **仓库** | `server/packages/plugins/*.plugin`<br>`server/packages/themes/*.theme` | 权威来源，包文件即本体 |
+| **仓库** | `server/packages/plugins/*.plugin`<br>`server/packages/themes/<theme-id>/` | 权威来源，包文件即本体 |
 | **本地缓存** | IndexedDB / LocalStorage | 每台设备下载后的副本，**离线可用** |
 
 > 包文件是**唯一权威来源**，不落数据库。
-> 直接往 `server/packages/` 下丢 `.plugin` / `.theme` 文件，重启后端即可被广场浏览到；
-> 通过广场「上传」写入的包同样落到这两个目录。
+> 直接往 `server/packages/` 下丢 `.plugin` 文件或主题文件夹，重启后端即可被广场浏览到；
+> 通过广场「上传」写入的包同样落到这两个位置。
 
-**插件包（`.plugin`）与主题包（`.theme`）都是打包文件**，采用同款「信封 + 载荷」结构：
+---
+
+#### 主题包：文件夹制（protocol 格式）
+
+主题包以**文件夹**形式组织，每个主题在 `server/packages/themes/` 下独占一个子文件夹，
+**文件夹名必须与该主题 `theme.json` 中的 `id` 完全一致**：
+
+```
+server/packages/themes/          # 主题目录
+└── <theme-id>/                  # 单个主题，文件夹名 == theme.json 的 id
+    ├── theme.json               # 必需：主题清单
+    ├── theme.css                # 必需：样式变量
+    └── assets/                  # 可选：壁纸等二进制资源
+        └── wallpaper.webp
+```
+
+`theme.json` 严格字段白名单（**不得发明字段**）：
+
+```jsonc
+{
+  "id": "pure-light",            // 小写字母-数字-连字符，1~32 字符，全局唯一
+  "name": "Pure Light",
+  "author": "智简匣",
+  "version": "1.0.0",            // 语义化版本
+  "protocol": 1,                 // 1 或 2；2 支持视频、自定义文本、BGM
+  "description": "纯白通透主题",  // 一句话简介，≤80 字
+  "colors": {                    // 五个必需语义色
+    "--bg": "#f7f8fa",
+    "--fg": "#16181d",
+    "--accent": "#5b8def",
+    "--card": "#ffffff",
+    "--border": "#e6e8ee"
+  },
+  "wallpaper": "assets/wallpaper.webp",   // 相对 theme.json 的路径
+
+  // 以下仅 protocol: 2 可用
+  // "video": { "src": "assets/video.mp4", "blur": true },
+  // "bgm": { "home": "assets/bgm-home.mp3" },
+  // "texts": { "windowTitle": "自定义窗口标题" }
+}
+```
+
+`theme.css` 只写 `:root { --变量: 值; }` 形式的变量声明：
+
+```css
+:root {
+  --bg: #f7f8fa;
+  --fg: #16181d;
+  --accent: #5b8def;
+  --card: #ffffff;
+  --border: #e6e8ee;
+  --fg-muted: #6b7280;    /* 层次色，映射到 --zj-muted-fg */
+  --card-alpha: 0.72;    /* 毛玻璃透明度 */
+  --card-blur: 20px;     /* 毛玻璃模糊半径 */
+}
+```
+
+> 约束：不得写 `@import` / `url()` / `position: fixed`，
+> 不得在 `themes/` 根目录直接放 `theme.json` 或 `assets/`。
+
+**资源约束**：
+
+| 资源 | 格式 | 上限 |
+|------|------|------|
+| 壁纸 | WebP（长边 ≤ 2560） | ≤ 2MB |
+| 背景视频 | MP4（仅 protocol 2） | ≤ 35MB |
+| BGM | MP3 / OGG（仅 protocol 2） | ≤ 5MB |
+
+**质量要求**：`--fg` 与 `--bg` 对比度 ≥ 4.5:1（后端落盘时强制校验，不达标直接跳过）；
+壁纸需低对比、不干扰文字；风格一致；文案克制。
+
+**协议包 → 内部主题模型的适配**：
+协议主题只有**一套**语义色板，而宿主需要**亮/暗两套**完整配色。
+`src/lib/theme/protocol.ts` 负责这层转换：
+
+- 色板 → 亮色模式基准，再按亮度**自动派生**暗色模式配色（保证两种模式都可读）；
+- `theme.css` 的语义变量 → 宿主 `--zj-*` 变量空间（`--bg` → `--zj-bg` 等），
+  其中五色板变量优先级高于 `theme.json`（theme.css 是「变量与覆盖」）；
+- `--card-alpha` / `--card-blur` 覆盖毛玻璃卡片参数，`--radius` 被忽略（圆角是全局设置）；
+- 壁纸相对路径 → 后端绝对 URL（`/theme-assets/<id>/assets/<file>`，跨端口可访问）。
+
+> 资源由后端以 `Cross-Origin-Resource-Policy: cross-origin` 提供 ——
+> 前端启用了跨域隔离（COEP）以跑 WebGPU，跨源资源不带该头会被浏览器拦截。
+
+---
+
+#### 插件包与单文件主题包（信封制）
+
+**插件包（`.plugin`）与单文件主题包（`.theme`）都是打包文件**，采用同款「信封 + 载荷」结构：
 
 ```jsonc
 // .theme 示例（.plugin 结构相同，只是载荷段不同）
@@ -135,6 +223,20 @@
 **使用流程**：
 - 插件：广场点「下载」→ 从后端取包 → 校验兼容性 → 缓存到 IndexedDB → 启用，此后离线可用
 - 主题：广场 → 「主题」分类页点「下载」→ 立即应用并缓存到本地；也可设置 → 个性化 →「导入 .theme」
+
+**新增主题包**（文件夹制）：
+
+```bash
+# 1) 建目录，目录名必须与 theme.json 的 id 一致
+mkdir -p server/packages/themes/my-theme/assets
+
+# 2) 写入 theme.json / theme.css / assets/
+# 3) 重启后端，即可在广场「主题」页看到并下载
+```
+
+> 后端启动时扫描 `server/packages/themes/` 下的每个子文件夹，
+> 校验 `theme.json` 字段、`theme.css` 存在性、对比度与资源约束，任一不达标则跳过并打日志。
+> 同 id 冲突时**文件夹制优先于单文件信封制**。
 
 ### API 服务商与能力分类
 
@@ -234,6 +336,11 @@ Key 永不回传前端，接口只返回 `hasKey` 布尔值。
 - 刷新页面自动恢复上次的主题包与模式
 - **前端不提供主题制作界面**：图标 / 卡片 / 导航栏 / 配色 / 壁纸等定制项在外部制作的 `.theme` 包中定义，导入或从广场下载后生效
 - **功能广场「主题」页只展示仓库主题包**，不重复列出内置主题（内置主题在「设置 · 个性化」中切换）
+- **两种主题包形态并存**：
+  - **文件夹制**（`themes/<id>/`，protocol 1/2）—— 外部制作的主形态，含 `theme.json` + `theme.css` + `assets/`
+  - **单文件信封制**（`themes/<id>-<version>.theme`）—— 带完整亮/暗配色的历史形态
+  - 两种形态由 `src/lib/theme/protocol.ts` 统一适配到内部主题模型
+- **协议主题包自动派生暗色模式**：协议只有一套色板，宿主按亮度自动生成配套暗色配色
 
 ### 两页滚动吸附布局
 
@@ -563,7 +670,9 @@ zhijianxia/
 │   │   ├── theme/
 │   │   │   ├── types.ts            # 主题包类型与内置预设
 │   │   │   ├── packager.ts         # ⭐ .theme 包格式（导入/导出/校验）
-│   │   │   └── density.ts          # 界面密度（小/中/大）
+│   │   │   ├── protocol.ts         # ⭐ 文件夹制主题包适配（色板→亮暗 / CSS 变量 / 资源 URL）
+│   │   │   ├── density.ts          # 界面密度（小/中/大）
+│   │   │   └── radius.ts           # 全局圆角（不绑定主题）
 │   │   ├── registry-cache.ts       # ⭐ 仓库内容的本地缓存（离线可用）
 │   │   └── utils.ts
 │   │

@@ -1,0 +1,16 @@
+{
+  "id": "pure-light",
+  "name": "Pure Light",
+  "author": "智简匣",
+  "version": "1.0.0",
+  "protocol": 1,
+  "description": "纯白通透主题：半透明毛玻璃卡片、极淡边框与柔和蓝强调色，文字近黑。",
+  "colors": {
+    "--bg": "#f7f8fa",
+    "--fg": "#16181d",
+    "--accent": "#5b8def",
+    "--card": "#ffffff",
+    "--border": "#e6e8ee"
+  },
+  "wallpaper": "assets/wallpaper.webp"
+}

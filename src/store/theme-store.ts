@@ -66,12 +66,19 @@ interface ThemeState {
   applyWallpaperFor: (pack: ThemePack, mode: ThemeMode) => Promise<void>;
 }
 
+/** 上一主题注入的额外 CSS 变量名（切换主题时需先清理） */
+let injectedVarNames: string[] = [];
+
 /** 计算主题包 CSS 变量 */
 function buildCssVars(pack: ThemePack, mode: ThemeMode) {
   const v: ThemeVariant = mode === 'dark' ? pack.dark : pack.light;
   const shadow = SHADOW_PRESETS[v.shadow];
   const root = document.documentElement;
   const set = (k: string, val: string) => root.style.setProperty(k, val);
+
+  // 先清掉上一个主题包带来的额外变量，避免样式串味
+  for (const name of injectedVarNames) root.style.removeProperty(name);
+  injectedVarNames = [];
 
   set('--zj-accent', v.accent);
   set('--zj-accent-soft', v.accentSoft);
@@ -88,6 +95,12 @@ function buildCssVars(pack: ThemePack, mode: ThemeMode) {
   // 主色前景色：按主色亮度自动选黑/白，保证对比度
   const fg = pickForeground(v.accent);
   set('--zj-accent-fg', fg);
+
+  // 主题包附带的额外变量（来自 theme.css）
+  for (const [name, value] of Object.entries(pack.cssVars ?? {})) {
+    set(name, value);
+    injectedVarNames.push(name);
+  }
 
   // 卡片与导航栏风格：由 data-* 属性驱动 globals.css 中的样式
   const card = pack.card ?? {};
@@ -141,7 +154,7 @@ async function resolveWallpaperUrl(pack: ThemePack, mode: ThemeMode): Promise<st
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
   packs: BUILTIN_THEME_PACKS,
-  activePackId: 'ink-default',
+  activePackId: 'pure-light',
   mode: 'light',
   loading: true,
   wallpaperUrl: null,
@@ -157,7 +170,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
         .filter((p) => !p.builtin)
         .map((p) => normalizeThemePack(p)),
     ];
-    const activePackId = readLocal<string>(ACTIVE_THEME_KEY, 'ink-default');
+    const activePackId = readLocal<string>(ACTIVE_THEME_KEY, 'pure-light');
     const mode = readLocal<ThemeMode>(THEME_MODE_KEY, 'light');
     const safePackId = packs.some((p) => p.id === activePackId)
       ? activePackId
@@ -286,9 +299,9 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   /** 重置主题包：清空自定义，恢复内置 */
   resetPacks: () => {
     writeLocal(THEME_STORAGE_KEY, []);
-    writeLocal(ACTIVE_THEME_KEY, 'ink-default');
+    writeLocal(ACTIVE_THEME_KEY, 'pure-light');
     set({ packs: BUILTIN_THEME_PACKS });
-    get().applyThemePack('ink-default');
+    get().applyThemePack('pure-light');
   },
 
   /** 设置指定模式的壁纸（内置渐变 / 内置图片） */

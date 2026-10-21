@@ -14,6 +14,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('node:http');
 const os = require('node:os');
+const path = require('node:path');
 
 const { DB_FILE } = require('./db');
 const { initDatabase } = require('./init-db');
@@ -57,6 +58,39 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/registry', registryRoutes);
+
+/**
+ * 主题资源静态服务：/theme-assets/<theme-id>/assets/<file>
+ *
+ * 对应 theme.json 中 `"wallpaper": "assets/wallpaper.webp"`
+ * 这类相对路径，实际读取 `/theme-assets/pure-light/assets/wallpaper.webp`。
+ *
+ * 用静态托管而非逐个接口，是因为壁纸 / BGM 都是静态二进制，
+ * 让浏览器自行管理缓存与 Range 请求更合适。
+ */
+app.use(
+  '/theme-assets',
+  express.static(path.join(__dirname, '..', 'packages', 'themes'), {
+    index: false,
+    dotfiles: 'deny',
+    maxAge: '7d',
+    setHeaders: (res, filePath) => {
+      const rel = path.relative(
+        path.join(__dirname, '..', 'packages', 'themes'),
+        filePath
+      );
+      // rel 形如 pure-light/assets/wallpaper.webp
+      if (!rel.split(path.sep).includes('assets')) {
+        res.status(404);
+        return;
+      }
+      // 前端启用了跨域隔离（COEP: require-corp，用于 WebGPU / 多线程 WASM），
+      // 跨源资源必须显式允许嵌入，否则壁纸会被浏览器拦截。
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    },
+  }),
+);
 
 // 未匹配的接口
 app.use('/api', (req, res) => {

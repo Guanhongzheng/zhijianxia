@@ -277,9 +277,13 @@ html[data-card-style='outline'] .zj-card {
 }
 
 html[data-card-style='glass'] .zj-card {
-  background-color: color-mix(in srgb, var(--zj-card) 72%, transparent);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  background-color: color-mix(
+    in srgb,
+    var(--zj-card) var(--zj-card-alpha, 72%),
+    transparent
+  );
+  backdrop-filter: blur(var(--zj-card-blur, 14px)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--zj-card-blur, 14px)) saturate(140%);
 }
 
 /* 卡片边框宽度（0 = 无边框） */

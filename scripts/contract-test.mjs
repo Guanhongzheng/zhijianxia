@@ -337,6 +337,80 @@ async function req(path, { method = 'GET', body, token } = {}) {
     '冒烟测试已接入加载流程'
   );
 
+  // ---------- 主题包：协议制（文件夹制）与内部 ThemePack 的适配 ----------
+  // 文件夹制 theme.json 只有一套 colors，而内部 ThemePack 需要 light/dark 两套。
+  // 若前端把协议包直接当内部结构用，pack.light 为 undefined，
+  // buildCssVars() 会抛 TypeError 导致整棵 React 树崩溃。
+  const protocolSrc = readFileSync(
+    new URL('../src/lib/theme/protocol.ts', import.meta.url),
+    'utf8'
+  );
+  const marketSrc = readFileSync(
+    new URL(
+      '../src/components/cards/theme-marketplace-panel.tsx',
+      import.meta.url
+    ),
+    'utf8'
+  );
+  const storeSrc = readFileSync(
+    new URL('../src/store/theme-store.ts', import.meta.url),
+    'utf8'
+  );
+
+  check(
+    /export function isProtocolTheme/.test(protocolSrc) &&
+      /export function protocolToThemePack/.test(protocolSrc) &&
+      /export function parseProtocolCss/.test(protocolSrc),
+    '协议主题适配层存在（识别 / 转换 / CSS 解析）',
+    'protocol.ts 提供 isProtocolTheme / protocolToThemePack / parseProtocolCss'
+  );
+
+  check(
+    /raw\.format === 'zhijianxia\.theme\.dir'/.test(marketSrc) &&
+      /protocolToThemePack\(raw\.manifest/.test(marketSrc),
+    '广场下载按形态分派：文件夹制走协议适配，信封制走原逻辑',
+    'handleDownload 已分派两种形态'
+  );
+
+  check(
+    /resolveAssetUrl/.test(marketSrc) &&
+      /backendBaseUrl/.test(marketSrc),
+    '主题包资源 URL 补全为后端绝对地址（跨端口可访问）',
+    'resolveAssetUrl 已接入 backendBaseUrl'
+  );
+
+  // 协议包必须能派生出完整的亮/暗两套配色，否则切换模式会崩
+  check(
+    /deriveDark/.test(protocolSrc) &&
+      /makeVariant\(bg, fg, accent, card, border, 1\)/.test(protocolSrc),
+    '协议色板派生出亮/暗两套完整配色',
+    'deriveDark + makeVariant 就位'
+  );
+
+  // theme.css 的额外变量要注入 DOM，且切换主题时要清理旧变量
+  check(
+    /pack\.cssVars/.test(storeSrc) &&
+      /removeProperty/.test(storeSrc) &&
+      /injectedVarNames/.test(storeSrc),
+    '主题包 CSS 变量注入 DOM 且切换时清理旧变量',
+    'buildCssVars 注入 cssVars 并清理上一主题变量'
+  );
+
+  check(
+    /--zj-card-alpha/.test(protocolSrc) &&
+      /--zj-card-blur/.test(protocolSrc),
+    '毛玻璃参数（透明度 / 模糊半径）可由主题包覆盖',
+    '--card-alpha / --card-blur 已映射'
+  );
+
+  // 圆角是全局独立设置，不绑定主题包
+  check(
+    /name === '--radius'/.test(protocolSrc) &&
+      /name === '--card-radius'/.test(protocolSrc),
+    '圆角不随主题包绑定（--radius / --card-radius 被跳过）',
+    '圆角变量已排除'
+  );
+
   // 清理
   await req(`/api/groups/${groupId}`, { method: 'DELETE', token: tokenA });
   await req(`/api/notices/${noticeId}`, { method: 'DELETE', token: adminToken });

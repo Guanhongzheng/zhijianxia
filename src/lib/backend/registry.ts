@@ -9,6 +9,7 @@
 
 import { backendFetch, type LanConfig, BackendOfflineError } from './client';
 import { createThemePackage } from '@/lib/theme/packager';
+import type { ProtocolTheme } from '@/lib/theme/protocol';
 import type { ThemePack } from '@/lib/theme/types';
 
 // ---------------------------------------------------------------------------
@@ -115,21 +116,49 @@ export async function fetchRegistryThemes(
   return res.themes ?? [];
 }
 
-/** 下载指定主题包的内容 */
+/** 仓库中主题包的原始下载结果（两种形态） */
+export type RemoteThemePackage =
+  | {
+      /** 文件夹制 */
+      format: 'zhijianxia.theme.dir';
+      /** theme.json 原文 */
+      manifest: ProtocolTheme;
+      /** theme.css 原文 */
+      css: string;
+      /** 资源索引：相对路径 → { size, url } */
+      assets: Record<string, { size: number; url: string }>;
+    }
+  | {
+      /** 单文件信封制 */
+      format: 'zhijianxia.theme';
+      /** 主题定义（内部 ThemePack 结构） */
+      pack: ThemePack;
+    };
+
+/**
+ * 下载指定主题包的内容。
+ *
+ * 返回原始包内容，由调用方决定如何转换（协议制需经 `protocolToThemePack` 适配）。
+ */
 export async function fetchRegistryTheme(
   cfg: LanConfig,
   token: string,
   id: string,
-): Promise<ThemePack> {
-  const res = await backendFetch<{ pack?: ThemePack }>(
+): Promise<RemoteThemePackage> {
+  const res = await backendFetch<RemoteThemePackage>(
     cfg,
     `/api/registry/themes/${encodeURIComponent(id)}`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
-  if (!res.pack) {
+  if (!res || typeof res !== 'object') {
     throw new Error('后端返回的主题包内容为空');
   }
-  return res.pack;
+  if (res.format === 'zhijianxia.theme.dir') {
+    if (!res.manifest) throw new Error('后端返回的主题包缺少 theme.json');
+    return res;
+  }
+  if (!res.pack) throw new Error('后端返回的主题包内容为空');
+  return res;
 }
 
 // ---------------------------------------------------------------------------
