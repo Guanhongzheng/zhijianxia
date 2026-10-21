@@ -31,6 +31,7 @@ import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useThemeStore } from '@/store/theme-store';
 import { THEME_CATEGORIES } from '@/lib/theme/categories';
+import { BUILTIN_THEME_PACKS } from '@/lib/theme/types';
 import {
   readThemePackageFile,
   themePackOf,
@@ -137,10 +138,18 @@ export function ThemeMarketplacePanel() {
     [packs],
   );
 
+  /** 内置（默认）主题 id —— 广场里不展示，避免与已应用的内置主题重复 */
+  const builtinIds = useMemo(
+    () => new Set(BUILTIN_THEME_PACKS.map((p) => p.id)),
+    [],
+  );
+
   /** 按分类与关键词过滤仓库主题 */
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
     return registryThemes.filter((t) => {
+      // 默认/内置主题不在广场中出现
+      if (builtinIds.has(t.id)) return false;
       if (category !== 'all' && t.category !== category) return false;
       if (!kw) return true;
       return (
@@ -149,7 +158,13 @@ export function ThemeMarketplacePanel() {
         t.tags.some((tag) => tag.toLowerCase().includes(kw))
       );
     });
-  }, [registryThemes, category, keyword]);
+  }, [registryThemes, category, keyword, builtinIds]);
+
+  /** 仓库中被隐藏的默认/内置主题数量 */
+  const hiddenBuiltinCount = useMemo(
+    () => registryThemes.filter((t) => builtinIds.has(t.id)).length,
+    [registryThemes, builtinIds],
+  );
 
   /** 导入本地 .theme 文件 */
   const handleImport = async (file: File) => {
@@ -306,7 +321,9 @@ export function ThemeMarketplacePanel() {
           <Palette className="size-5 text-[var(--zj-muted-fg)]" />
           <p className="text-sm text-[var(--zj-muted-fg)]">
             {backendOnline
-              ? '没有找到匹配的主题包'
+              ? hiddenBuiltinCount > 0
+                ? '默认主题已内置，无需下载；暂无可安装的主题包'
+                : '没有找到匹配的主题包'
               : '后端服务未开启，无法浏览主题包'}
           </p>
         </div>

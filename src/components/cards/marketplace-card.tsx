@@ -7,17 +7,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { usePluginStore } from '@/store/plugin-store';
 import { useAppStore } from '@/store/app-store';
 import { useThemeStore } from '@/store/theme-store';
+import { cn } from '@/lib/utils';
 
 /**
  * 功能广场卡片 —— 展示插件安装概况与快捷入口。
  * 点击卡片任意位置打开功能广场。
  */
-export function MarketplaceCard() {
+export function MarketplaceCard({ className }: { className?: string }) {
   const modules = usePluginStore((s) => s.modules);
   const installed = usePluginStore((s) => s.installed);
   const loading = usePluginStore((s) => s.loading);
   const openCard = useAppStore((s) => s.openCard);
-  const themeCount = useThemeStore((s) => s.packs.length);
+  const themeCount = useThemeStore((s) => s.packs.filter((p) => !p.builtin).length);
 
   const installedCount = installed.length;
   const total = modules.length;
@@ -29,7 +30,10 @@ export function MarketplaceCard() {
       whileTap={{ scale: 0.98 }}
       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
       onClick={() => openCard('marketplace')}
-      className="zj-card flex h-full flex-col items-start gap-3 p-5 text-left transition-colors hover:border-[var(--zj-accent)]"
+      className={cn(
+        'zj-card flex h-full flex-col items-start gap-3 p-5 text-left transition-colors hover:border-[var(--zj-accent)]',
+        className,
+      )}
     >
       <div className="flex w-full items-center justify-between">
         <div className="flex size-9 items-center justify-center rounded-lg bg-[var(--zj-accent-soft)] text-[var(--zj-accent)]">

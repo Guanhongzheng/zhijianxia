@@ -19,6 +19,7 @@ const COLORS = {
 /**
  * 全局轻提示
  *
+ * - 固定在**右上角**
  * - 从**右侧**以非线性缓动飞入
  * - 3 秒后自动**向右**飞出
  * - 多条提示并存时**向下排列**（最新的在最下方）
@@ -29,7 +30,7 @@ export function Toast() {
 
   return (
     <div
-      className="pointer-events-none fixed right-4 bottom-4 z-[100] flex flex-col items-end gap-2"
+      className="pointer-events-none fixed top-4 right-4 z-[100] flex flex-col items-end gap-2"
       role="status"
       aria-live="polite"
     >

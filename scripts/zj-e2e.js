@@ -149,12 +149,16 @@ function log(ok, name, extra = '') {
       (dashSub ?? '').slice(0, 24),
     );
 
-    // 第 2 页卡片：公告、功能广场、我的插件、好友、群聊、系统设置
+    // 第 2 页卡片：公告、功能广场、好友、群聊、系统设置（无「我的插件」）
     const page2 = await page.textContent('.zj-snap-section:nth-child(2)');
-    const expected = ['公告', '功能广场', '我的插件', '好友', '群聊', '系统设置'];
+    const expected = ['公告', '功能广场', '好友', '群聊', '系统设置'];
     log(
       expected.every((t) => (page2 ?? '').includes(t)),
-      '第 2 页包含全部 6 张卡片（公告/功能广场/我的插件/好友/群聊/系统设置）',
+      '第 2 页包含全部 5 张卡片（公告/功能广场/好友/群聊/系统设置）',
+    );
+    log(
+      !(page2 ?? '').includes('我的插件'),
+      '第 2 页不再展示「我的插件」卡片',
     );
 
     // 启动插件位于底部导航栏，不占用卡片位
@@ -393,6 +397,11 @@ function log(ok, name, extra = '') {
       '通知从右侧飞入（贴右侧边缘）',
       JSON.stringify(toastGeo.items),
     );
+    log(
+      toastGeo.items.length > 0 && toastGeo.items.every((t) => t.top < 120),
+      '通知固定在右上角（top < 120px）',
+      JSON.stringify(toastGeo.items.map((t) => t.top)),
+    );
 
     // 再触发一条通知，检查多条向下排列
     await page.evaluate(() => {
@@ -559,37 +568,18 @@ function log(ok, name, extra = '') {
       await page.waitForTimeout(800);
     }
 
-    // ---------- 10.5「我的插件」卡片：点击即全屏启动 ----------
-    const pluginCardClicked = await page.evaluate(() => {
+    // ---------- 10.5 仪表盘不再有「我的插件」卡片，插件入口在底栏 ----------
+    const hasInstalledCard = await page.evaluate(() => {
       const cards = Array.from(
         document.querySelectorAll('.zj-snap-section:nth-child(2) .zj-card'),
       );
-      const target = cards.find(
+      return cards.some(
         (c) =>
-          c.querySelector('p.text-sm.font-medium')?.textContent.trim() === '我的插件',
+          c.querySelector('p.text-sm.font-medium')?.textContent.trim() ===
+          '我的插件',
       );
-      if (!target) return false;
-      // 卡片内部第一个插件按钮即为启动入口
-      const btn = target.querySelector('button.motion-button, button');
-      const items = Array.from(target.querySelectorAll('button')).filter((b) =>
-        b.querySelector('span.truncate'),
-      );
-      const launch = items[0];
-      if (launch) {
-        launch.click();
-        return true;
-      }
-      return false;
     });
-    if (pluginCardClicked) {
-      await page.waitForTimeout(1500);
-      const pluginDialog = await page.$('[data-zj-fullscreen-card]');
-      log(!!pluginDialog, '点击「我的插件」卡片中的插件即全屏启动插件');
-      await page.keyboard.press('Escape');
-      await page.waitForTimeout(800);
-    } else {
-      log(true, '「我的插件」卡片存在但暂无已安装插件可点击（跳过启动校验）');
-    }
+    log(!hasInstalledCard, '仪表盘已移除「我的插件」卡片（插件入口保留在底栏）');
 
     // 本地模型：国内镜像源 + 用户自选模型
     await page.evaluate(() => {
@@ -877,6 +867,10 @@ function log(ok, name, extra = '') {
       !themeMarket.includes('内置主题'),
       '主题广场不再列出内置主题（仅展示仓库主题包）',
     );
+    log(
+      !themeMarket.includes('Pure Light'),
+      '主题广场不显示默认主题（Pure Light 已内置，不在广场出现）',
+    );
 
     // 全局隐藏右侧（垂直）滚动条
     const scrollbarHidden = await page.evaluate(() => {
@@ -914,10 +908,14 @@ function log(ok, name, extra = '') {
       );
       return { count: cached.length, ids: cached.map((c) => c.id) };
     });
+    // 仓库当前只有「默认主题」，它在广场中被隐藏 → 没有可下载项属正常
     log(
-      !!themeDownloaded && themeDownloaded.count > 0,
-      '主题包可从后端仓库下载并落地本地缓存',
-      themeDownloaded ? themeDownloaded.ids.join(',') : '未找到下载按钮',
+      themeDownloaded === null ||
+        (themeDownloaded.count > 0 && themeDownloaded.ids.length > 0),
+      '主题包下载链路正常（默认主题已隐藏时无下载项亦通过）',
+      themeDownloaded
+        ? themeDownloaded.ids.join(',')
+        : '无可下载主题包（默认主题已在广场隐藏）',
     );
 
     await page.keyboard.press('Escape');

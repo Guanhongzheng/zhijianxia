@@ -15,8 +15,8 @@ import { useAuthStore } from '@/store/auth-store';
 import { ensureBackend } from '@/components/modals/backend-gate';
 import { AnnouncementsCard } from '@/components/cards/announcements-card';
 import { MarketplaceCard } from '@/components/cards/marketplace-card';
-import { InstalledPluginsCard } from '@/components/cards/installed-plugins-card';
 import { TopBar } from '@/components/layout/top-bar';
+import { cn } from '@/lib/utils';
 
 /**
  * 第 2 页：功能卡片汇总页
@@ -47,70 +47,75 @@ export function DashboardPage({ active }: { active: boolean }) {
 
       {/* 卡片区：按内容自适应高度，不强制铺满 */}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
-        <div className="mx-auto grid w-full max-w-6xl gap-4 lg:grid-cols-3">
-        {/* 公告卡片 */}
-        <div className="lg:col-span-2">
-          <CardShell
-            icon={<Megaphone className="size-4" />}
-            title="公告"
-            desc="更新日志与新增功能公告"
-            action={
-              isAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => openCard('announcements')}
-                  className="text-xs text-[var(--zj-accent)] transition-opacity hover:opacity-70"
-                >
-                  管理
-                </button>
-              ) : null
-            }
-          >
-            <AnnouncementsCard />
-          </CardShell>
-        </div>
+        <div className="mx-auto grid w-full max-w-6xl items-start gap-4 lg:grid-cols-3">
+          {/* 左列：好友 / 群聊（方形） + 系统设置（长方形） */}
+          <div className="flex flex-col gap-4">
+            {/* 好友卡片 */}
+            <EntryCard
+              square
+              icon={<Users className="size-4" />}
+              title="好友"
+              desc="通过 UID 搜索并添加好友"
+              requiresBackend
+              logged={logged}
+              onClick={async () => {
+                const ok = await ensureBackend('好友');
+                if (ok) openCard('friends');
+              }}
+            />
 
-        {/* 功能广场卡片（原启动插件位置） */}
-        <MarketplaceCard />
+            {/* 群聊卡片 */}
+            <EntryCard
+              square
+              icon={<MessageSquare className="size-4" />}
+              title="群聊"
+              desc="创建群组，实时收发消息"
+              requiresBackend
+              logged={logged}
+              onClick={async () => {
+                const ok = await ensureBackend('群聊');
+                if (ok) openCard('groups');
+              }}
+            />
 
-        {/* 我的插件：点击即全屏启动 */}
-        <div className="lg:col-span-2">
-          <InstalledPluginsCard />
-        </div>
+            {/* 系统设置卡片（长方形） */}
+            <EntryCard
+              icon={<Settings className="size-4" />}
+              title="系统设置"
+              desc="AI 引擎、局域网连接与通用设置"
+              onClick={() => openCard('settings')}
+            />
+          </div>
 
-        {/* 好友卡片 */}
-        <EntryCard
-          icon={<Users className="size-4" />}
-          title="好友"
-          desc="通过 UID 搜索并添加好友"
-          requiresBackend
-          logged={logged}
-          onClick={async () => {
-            const ok = await ensureBackend('好友');
-            if (ok) openCard('friends');
-          }}
-        />
+          {/* 中列：公告（与功能广场同样大小的方形卡片） */}
+          <div className="aspect-square min-h-0">
+            <CardShell
+              className="flex h-full flex-col"
+              icon={<Megaphone className="size-4" />}
+              title="公告"
+              desc="更新日志与新增功能公告"
+              action={
+                isAdmin ? (
+                  <button
+                    type="button"
+                    onClick={() => openCard('announcements')}
+                    className="text-xs text-[var(--zj-accent)] transition-opacity hover:opacity-70"
+                  >
+                    管理
+                  </button>
+                ) : null
+              }
+            >
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <AnnouncementsCard />
+              </div>
+            </CardShell>
+          </div>
 
-        {/* 群聊卡片 */}
-        <EntryCard
-          icon={<MessageSquare className="size-4" />}
-          title="群聊"
-          desc="创建群组，实时收发消息"
-          requiresBackend
-          logged={logged}
-          onClick={async () => {
-            const ok = await ensureBackend('群聊');
-            if (ok) openCard('groups');
-          }}
-        />
-
-        {/* 系统设置卡片 */}
-        <EntryCard
-          icon={<Settings className="size-4" />}
-          title="系统设置"
-          desc="AI 引擎、局域网连接与通用设置"
-          onClick={() => openCard('settings')}
-        />
+          {/* 右列：功能广场（正方形卡片） */}
+          <div className="aspect-square min-h-0">
+            <MarketplaceCard className="h-full" />
+          </div>
         </div>
       </div>
     </div>
@@ -123,16 +128,18 @@ function CardShell({
   title,
   desc,
   action,
+  className,
   children,
 }: {
   icon: React.ReactNode;
   title: string;
   desc: string;
   action?: React.ReactNode;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="zj-card overflow-hidden">
+    <div className={cn('zj-card overflow-hidden', className)}>
       <div className="flex items-center gap-3 border-b border-[var(--zj-border)] px-4 py-3">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[var(--zj-accent-soft)] text-[var(--zj-accent)]">
           {icon}
@@ -156,6 +163,7 @@ function EntryCard({
   onClick,
   requiresBackend = false,
   logged = true,
+  square = false,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -163,6 +171,8 @@ function EntryCard({
   onClick: () => void;
   requiresBackend?: boolean;
   logged?: boolean;
+  /** 方形卡片：与相邻列的方形卡片对齐 */
+  square?: boolean;
 }) {
   const backendOnline = useAppStore((s) => s.backendOnline);
   const offline = requiresBackend && (!backendOnline || !logged);
@@ -174,7 +184,10 @@ function EntryCard({
       whileTap={{ scale: 0.98 }}
       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
       onClick={onClick}
-      className="zj-card flex flex-col items-start gap-2.5 p-5 text-left transition-colors hover:border-[var(--zj-accent)]"
+      className={cn(
+        'zj-card flex flex-col items-start gap-2.5 p-5 text-left transition-colors hover:border-[var(--zj-accent)]',
+        square && 'aspect-square justify-between',
+      )}
     >
       <div className="flex w-full items-center justify-between">
         <div className="flex size-9 items-center justify-center rounded-lg bg-[var(--zj-accent-soft)] text-[var(--zj-accent)]">
