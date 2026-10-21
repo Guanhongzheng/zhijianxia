@@ -129,20 +129,6 @@ export function ThemeMarketplacePanel() {
     });
   }, [registryThemes, category, keyword]);
 
-  /** 本地内置主题（随应用分发，可离线直接使用） */
-  const builtinThemes = useMemo(() => {
-    const kw = keyword.trim().toLowerCase();
-    return packs.filter((p) => {
-      if (!p.builtin) return false;
-      if (category !== 'all' && (p.category ?? '综合') !== category) return false;
-      if (!kw) return true;
-      return (
-        p.name.toLowerCase().includes(kw) ||
-        (p.category ?? '').toLowerCase().includes(kw)
-      );
-    });
-  }, [packs, category, keyword]);
-
   /** 导入本地 .theme 文件 */
   const handleImport = async (file: File) => {
     const result = await readThemePackageFile(file);
@@ -276,74 +262,6 @@ export function ThemeMarketplacePanel() {
           );
         })}
       </div>
-
-      {/* 本地内置主题（随应用分发，离线可用） */}
-      {builtinThemes.length > 0 && (
-        <section className="space-y-2">
-          <p className="flex items-center gap-1.5 text-xs text-[var(--zj-muted-fg)]">
-            <Sparkles className="size-3" />
-            内置主题 · 随应用分发，离线即可使用
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {builtinThemes.map((pack) => {
-              const preview = mode === 'dark' ? pack.dark : pack.light;
-              const active = pack.id === activePackId;
-              return (
-                <motion.button
-                  key={pack.id}
-                  type="button"
-                  whileHover={{ y: -2 }}
-                  transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                  onClick={() => {
-                    applyThemePack(pack.id);
-                    notify(`已应用主题包「${pack.name}」`, 'success');
-                  }}
-                  className={cn(
-                    'overflow-hidden rounded-md border text-left transition-colors',
-                    active
-                      ? 'border-[var(--zj-accent)]'
-                      : 'border-[var(--zj-border)] hover:border-[var(--zj-accent)]',
-                  )}
-                >
-                  <div
-                    className="flex h-14 items-end gap-1 p-2"
-                    style={{ backgroundColor: preview.bg }}
-                  >
-                    <span
-                      className="size-5 rounded"
-                      style={{ backgroundColor: preview.accent }}
-                    />
-                    <span
-                      className="size-5 rounded"
-                      style={{
-                        backgroundColor: preview.card,
-                        border: `1px solid ${preview.border}`,
-                      }}
-                    />
-                    <span
-                      className="ml-1 h-2 w-8 rounded-full"
-                      style={{ backgroundColor: preview.accent }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2 border-t border-[var(--zj-border)] px-3 py-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-medium">{pack.name}</p>
-                      <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
-                        {pack.category ?? '综合'} · 圆角 {preview.radius}px
-                      </p>
-                    </div>
-                    {active && (
-                      <Badge variant="solid" className="shrink-0 text-[0.6875rem]">
-                        使用中
-                      </Badge>
-                    )}
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* 主题列表（局域网仓库） */}
       {registryLoading ? (
@@ -542,7 +460,7 @@ export function ThemeMarketplacePanel() {
                         <div className="min-w-0">
                           <p className="truncate text-xs font-medium">{pack.name}</p>
                           <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
-                            {pack.category ?? '综合'} · 圆角 {preview.radius}px
+                            {pack.category ?? '综合'}
                           </p>
                         </div>
                         {active && (

@@ -19,6 +19,7 @@ import { useThemeStore } from '@/store/theme-store';
 import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { DENSITY_OPTIONS } from '@/lib/theme/density';
+import { RADIUS_OPTIONS } from '@/lib/theme/radius';
 import {
   readThemePackageFile,
   themePackOf,
@@ -52,6 +53,8 @@ export function PersonalizationSettings() {
   const setMode = useThemeStore((s) => s.setMode);
   const density = useThemeStore((s) => s.density);
   const setDensity = useThemeStore((s) => s.setDensity);
+  const radius = useThemeStore((s) => s.radius);
+  const setRadius = useThemeStore((s) => s.setRadius);
 
   const notify = useAppStore((s) => s.notify);
   const lan = useAppStore((s) => s.lan);
@@ -292,7 +295,7 @@ export function PersonalizationSettings() {
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium">{pack.name}</p>
                       <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
-                        圆角 {preview.radius}px
+                        {pack.category ?? '综合'}
                       </p>
                     </div>
                     {active && (
@@ -413,6 +416,53 @@ export function PersonalizationSettings() {
             })}
           </div>
         )}
+      </section>
+
+      <Separator />
+
+      {/* 圆角（全局设置，不绑定主题包） */}
+      <section className="space-y-2.5">
+        <div>
+          <p className="text-sm font-medium">圆角</p>
+          <p className="mt-0.5 text-xs text-[var(--zj-muted-fg)]">
+            全局圆角大小，独立于主题包 —— 切换主题时保持不变
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {RADIUS_OPTIONS.map((opt) => {
+            const active = radius === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  setRadius(opt.value);
+                  notify(`圆角已切换为「${opt.label}」`, 'success');
+                }}
+                className={cn(
+                  'flex flex-col items-center gap-1.5 rounded-md border px-2 py-3 transition-colors',
+                  active
+                    ? 'border-[var(--zj-accent)] bg-[var(--zj-accent-soft)]'
+                    : 'border-[var(--zj-border)] hover:bg-[var(--zj-muted)]',
+                )}
+              >
+                {/* 圆角示意 */}
+                <span
+                  className="size-6 border-2 border-[var(--zj-accent)]"
+                  style={{ borderRadius: `${opt.value / 2}px` }}
+                  aria-hidden
+                />
+                <span className="text-xs font-medium">{opt.label}</span>
+                {active && <Check className="size-3.5 text-[var(--zj-accent)]" />}
+              </button>
+            );
+          })}
+        </div>
+        <p className="flex items-center gap-1.5 text-[0.75rem] text-[var(--zj-muted-fg)]">
+          <Monitor className="size-3" />
+          当前：{RADIUS_OPTIONS.find((o) => o.value === radius)?.desc ??
+            `${radius}px`}
+        </p>
       </section>
 
       <Separator />

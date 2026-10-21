@@ -146,7 +146,6 @@ const THEME_PACK_SEEDS = [
       fg: '#1c1f24',
       mutedFg: '#6b7280',
       border: '#e6e8ec',
-      radius: 16,
       shadow: 2,
     },
     dark: {
@@ -157,7 +156,6 @@ const THEME_PACK_SEEDS = [
       fg: '#e8eaed',
       mutedFg: '#9aa1ad',
       border: '#262b34',
-      radius: 16,
       shadow: 2,
     },
     wallpaper: {
@@ -185,7 +183,6 @@ const THEME_PACK_SEEDS = [
       fg: '#16241f',
       mutedFg: '#5f7a71',
       border: '#e0eae6',
-      radius: 20,
       shadow: 1,
     },
     dark: {
@@ -196,7 +193,6 @@ const THEME_PACK_SEEDS = [
       fg: '#e4f1ec',
       mutedFg: '#8aa79d',
       border: '#22302b',
-      radius: 20,
       shadow: 1,
     },
     wallpaper: {
@@ -224,7 +220,6 @@ const THEME_PACK_SEEDS = [
       fg: '#221a33',
       mutedFg: '#6f6785',
       border: '#e8e4f0',
-      radius: 24,
       shadow: 1,
     },
     dark: {
@@ -235,7 +230,6 @@ const THEME_PACK_SEEDS = [
       fg: '#ece7f6',
       mutedFg: '#9a90b5',
       border: '#282238',
-      radius: 24,
       shadow: 1,
     },
     wallpaper: {

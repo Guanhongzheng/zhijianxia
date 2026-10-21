@@ -328,6 +328,37 @@ function log(ok, name, extra = '') {
       (personalization ?? '').includes('界面大小'),
       '个性化含界面大小设置',
     );
+    log(
+      (personalization ?? '').includes('圆角'),
+      '个性化含独立的圆角设置（不绑定主题包）',
+    );
+
+    // 圆角为全局设置：点「胶囊」档后 --zj-radius 应变化，且与主题包无关
+    const radiusBefore = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--zj-radius').trim(),
+    );
+    const radiusChanged = await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const sec = Array.from(dlg.querySelectorAll('section')).find((s) =>
+        s.textContent.includes('圆角'),
+      );
+      if (!sec) return null;
+      const btn = Array.from(sec.querySelectorAll('button')).find(
+        (x) => x.textContent.trim() === '胶囊',
+      );
+      if (!btn) return null;
+      btn.click();
+      return true;
+    });
+    await page.waitForTimeout(800);
+    const radiusAfter = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue('--zj-radius').trim(),
+    );
+    log(
+      !!radiusChanged && radiusBefore !== radiusAfter && radiusAfter === '28px',
+      '圆角可在个性化中调整（全局生效）',
+      `${radiusBefore} → ${radiusAfter}`,
+    );
 
     // 切换到大档，验证根字号变化
     const beforeFont = await page.$eval(
@@ -699,8 +730,8 @@ function log(ok, name, extra = '') {
       '主题分类包含配色 / 卡片 / 导航栏 / 壁纸 / 图标等维度',
     );
     log(
-      themeMarket.includes('内置主题'),
-      '主题分类列出内置主题（可离线直接使用）',
+      !themeMarket.includes('内置主题'),
+      '主题广场不再列出内置主题（仅展示仓库主题包）',
     );
 
     // 主题包从后端仓库下载到前端（落地本地缓存，离线可用）

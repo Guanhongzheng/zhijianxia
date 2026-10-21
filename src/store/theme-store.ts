@@ -20,6 +20,11 @@ import {
   saveDensity,
   type Density,
 } from '@/lib/theme/density';
+import {
+  applyRadius,
+  readRadius,
+  saveRadius,
+} from '@/lib/theme/radius';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -36,12 +41,16 @@ interface ThemeState {
   wallpaperUrl: string | null;
   /** 界面密度：小 / 中 / 大 */
   density: Density;
+  /** 全局圆角（px）—— 不绑定主题包，在「个性化」中单独调整 */
+  radius: number;
 
   init: () => Promise<void>;
   setMode: (mode: ThemeMode) => void;
   toggleMode: () => void;
   setAccent: (hex: string) => void;
   setDensity: (density: Density) => void;
+  /** 设置全局圆角（px）—— 独立于主题包 */
+  setRadius: (radius: number) => void;
   applyThemePack: (id: string) => void;
   saveCustomPack: (pack: ThemePack) => void;
   removeCustomPack: (id: string) => void;
@@ -71,7 +80,7 @@ function buildCssVars(pack: ThemePack, mode: ThemeMode) {
   set('--zj-fg', v.fg);
   set('--zj-muted-fg', v.mutedFg);
   set('--zj-border', v.border);
-  set('--zj-radius', `${v.radius}px`);
+  // 圆角不再跟随主题包 —— 由全局 radius 设置单独控制（见 applyRadius）
   set('--zj-shadow', shadow[mode]);
   set('--zj-shadow-sm', v.shadow === 0 ? 'none' : shadow[mode]);
   set('--zj-muted', `color-mix(in srgb, ${v.fg} 6%, transparent)`);
@@ -137,6 +146,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   loading: true,
   wallpaperUrl: null,
   density: 'sm',
+  radius: readRadius(),
 
   /** 初始化：读取 LocalStorage 中的主题包与当前选择 */
   init: async () => {
@@ -156,7 +166,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     const density = readDensity();
     applyDensity(density);
 
-    set({ packs, activePackId: safePackId, mode, density });
+    const radius = readRadius();
+    applyRadius(radius);
+
+    set({ packs, activePackId: safePackId, mode, density, radius });
 
     const pack = packs.find((p) => p.id === safePackId) ?? packs[0];
     buildCssVars(pack, mode);
@@ -172,6 +185,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   setDensity: (density) => {
     saveDensity(density);
     set({ density });
+  },
+
+  /** 设置全局圆角：立即生效并持久化，与主题包无关 */
+  setRadius: (radius) => {
+    const value = Math.min(48, Math.max(0, Math.round(radius)));
+    saveRadius(value);
+    set({ radius: value });
   },
 
   setMode: (mode) => {
@@ -376,7 +396,8 @@ export function useThemeBrand() {
 }
 
 /** 供插件读取当前主题快照 */
-export function readThemeSnapshot() {  const { packs, activePackId, mode } = useThemeStore.getState();
+export function readThemeSnapshot() {
+  const { packs, activePackId, mode, radius } = useThemeStore.getState();
   const pack = packs.find((p) => p.id === activePackId) ?? packs[0];
   const variant = mode === 'dark' ? pack.dark : pack.light;
   return {
@@ -395,7 +416,7 @@ export function readThemeSnapshot() {  const { packs, activePackId, mode } = use
       accentSoft: variant.accentSoft,
       border: variant.border,
       mutedFg: variant.mutedFg,
-      radius: `${variant.radius}px`,
+      radius: `${radius}px`,
     },
   };
 }

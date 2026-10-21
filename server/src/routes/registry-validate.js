@@ -162,9 +162,12 @@ function validateThemeVariant(variant, label) {
       return `主题包 ${label}.${field} 颜色不合法："${value}"，应为 #rrggbb 或 #rrggbbaa`;
     }
   }
-  const radius = variant.radius;
-  if (typeof radius !== 'number' || !Number.isFinite(radius) || radius < 0 || radius > 48) {
-    return `主题包 ${label}.radius 不合法："${radius}"，应为 0-48 的数字`;
+  // radius 已从主题包解绑（改为全局设置），仅在包内出现时才校验
+  if (variant.radius !== undefined) {
+    const radius = variant.radius;
+    if (typeof radius !== 'number' || !Number.isFinite(radius) || radius < 0 || radius > 48) {
+      return `主题包 ${label}.radius 不合法："${radius}"，应为 0-48 的数字`;
+    }
   }
   const shadow = variant.shadow;
   if (!Number.isInteger(shadow) || shadow < 0 || shadow > 3) {

@@ -230,6 +230,17 @@ function writePluginPackage(pkg) {
 }
 
 /**
+ * 去掉配色块中的 radius（圆角已改为全局设置，不再由主题包携带）
+ * @param {object} variant 配色块
+ * @returns {object}
+ */
+function stripRadius(variant) {
+  if (!variant || typeof variant !== 'object') return variant;
+  const { radius, ...rest } = variant;
+  return rest;
+}
+
+/**
  * 写入主题包文件（同 id 覆盖）
  *
  * 兼容两种入参：
@@ -278,6 +289,9 @@ function writeThemePackage(input) {
       preview: manifest.preview ?? d.preview,
       tags: manifest.tags?.length ? manifest.tags : d.tags,
       category: d.category,
+      // 圆角已从主题包解绑（改为全局设置）—— 落盘时剥离 radius
+      light: stripRadius(pack.light),
+      dark: stripRadius(pack.dark),
     },
   };
 

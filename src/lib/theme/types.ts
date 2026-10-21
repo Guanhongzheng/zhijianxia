@@ -88,8 +88,12 @@ export interface ThemeVariant {
   mutedFg: string;
   /** 边框色 */
   border: string;
-  /** 圆角（px） */
-  radius: number;
+  /**
+   * 圆角（px）—— **已废弃，不再绑定主题**。
+   * 圆角改为「设置 · 个性化」里的全局选项（见 `src/lib/theme/radius.ts`）。
+   * 此字段仅作旧包兼容保留，导入时会被忽略。
+   */
+  radius?: number;
   /** 阴影强度 0-3 */
   shadow: 0 | 1 | 2 | 3;
 }
@@ -145,7 +149,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#1c1f24',
       mutedFg: '#6b7280',
       border: '#e6e8ec',
-      radius: 16,
       shadow: 2,
     },
     dark: {
@@ -156,7 +159,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#e8eaed',
       mutedFg: '#9aa1ad',
       border: '#262b34',
-      radius: 16,
       shadow: 2,
     },
     wallpaper: {
@@ -180,7 +182,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#16241f',
       mutedFg: '#5f7a71',
       border: '#e0eae6',
-      radius: 20,
       shadow: 1,
     },
     dark: {
@@ -191,7 +192,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#e4f1ec',
       mutedFg: '#8aa79d',
       border: '#22302b',
-      radius: 20,
       shadow: 1,
     },
     wallpaper: {
@@ -215,7 +215,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#2a1f14',
       mutedFg: '#7d6c5b',
       border: '#ece3d8',
-      radius: 12,
       shadow: 2,
     },
     dark: {
@@ -226,7 +225,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#f4e9de',
       mutedFg: '#a08d7b',
       border: '#2e2822',
-      radius: 12,
       shadow: 2,
     },
     wallpaper: {
@@ -250,7 +248,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#221a33',
       mutedFg: '#6f6785',
       border: '#e8e4f0',
-      radius: 24,
       shadow: 1,
     },
     dark: {
@@ -261,7 +258,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#ece7f6',
       mutedFg: '#9a90b5',
       border: '#282238',
-      radius: 24,
       shadow: 1,
     },
     wallpaper: {
@@ -285,7 +281,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#17191d',
       mutedFg: '#71767e',
       border: '#e3e5e9',
-      radius: 8,
       shadow: 0,
     },
     dark: {
@@ -296,7 +291,6 @@ export const BUILTIN_THEME_PACKS: ThemePack[] = [
       fg: '#f0f2f5',
       mutedFg: '#8d939c',
       border: '#22252b',
-      radius: 8,
       shadow: 0,
     },
     wallpaper: {

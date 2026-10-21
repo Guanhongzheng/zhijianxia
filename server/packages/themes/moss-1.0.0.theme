@@ -50,7 +50,6 @@
       "fg": "#16241f",
       "mutedFg": "#5f7a71",
       "border": "#e0eae6",
-      "radius": 20,
       "shadow": 1
     },
     "dark": {
@@ -61,7 +60,6 @@
       "fg": "#e4f1ec",
       "mutedFg": "#8aa79d",
       "border": "#22302b",
-      "radius": 20,
       "shadow": 1
     },
     "wallpaper": {

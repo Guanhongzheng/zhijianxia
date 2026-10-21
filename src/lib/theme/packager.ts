@@ -116,10 +116,12 @@ export function isValidVariant(value: unknown): value is ThemeVariant {
     isValidColor(v.fg) &&
     isValidColor(v.mutedFg) &&
     isValidColor(v.border) &&
-    typeof v.radius === 'number' &&
-    Number.isFinite(v.radius) &&
-    v.radius >= 0 &&
-    v.radius <= 48 &&
+    // radius 已从主题包解绑（改为全局设置），仅在包内出现时才校验
+    (v.radius === undefined ||
+      (typeof v.radius === 'number' &&
+        Number.isFinite(v.radius) &&
+        v.radius >= 0 &&
+        v.radius <= 48)) &&
     typeof v.shadow === 'number' &&
     v.shadow >= 0 &&
     v.shadow <= 3
@@ -304,9 +306,18 @@ export function createThemePackage(
     pack: {
       ...pack,
       builtin: false,
+      // 圆角已从主题包解绑 —— 导出时剥离 radius
+      light: stripRadius(pack.light),
+      dark: stripRadius(pack.dark),
     },
     exportedAt: new Date().toISOString(),
   };
+}
+
+/** 去掉配色块中的 radius（已改为全局设置） */
+function stripRadius(variant: ThemeVariant): ThemeVariant {
+  const { radius: _radius, ...rest } = variant;
+  return rest as ThemeVariant;
 }
 
 /** 序列化为主题包文件内容 */
@@ -377,5 +388,8 @@ export function themePackOf(pkg: ThemePackage): ThemePack {
     name: pkg.manifest.name,
     category: pkg.manifest.category ?? pkg.pack.category ?? '综合',
     builtin: false,
+    // 圆角由全局设置控制，忽略包内可能存在的旧 radius
+    light: stripRadius(pkg.pack.light),
+    dark: stripRadius(pkg.pack.dark),
   });
 }
