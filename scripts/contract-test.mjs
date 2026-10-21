@@ -354,6 +354,22 @@ async function req(path, { method = 'GET', body, token } = {}) {
     '缓存清理已条件化'
   );
 
+  // ORT 建 session 时的两条VerifyEachNodeIsAssignedToAnEp 警告是正常行为
+  //（ORT 有意把 shape 类算子留在 CPU），但它们走 C++/wasm 侧的原生 logger，
+  // 绕过 `env.backends.onnx.logLevel`，只能靠 console 出口过滤。
+  // 过滤条件必须极窄，不能误吞真正的 ORT 报错。
+  const ortFilterBody =
+    engineSrc.split('const ORT_BENIGN_LOG')[1]?.split('async function applyLocalWasm')[0] ?? '';
+  check(
+    /installOrtLogFilter/.test(engineSrc) &&
+      /installOrtLogFilter\(\)/.test(engineSrc.split('applyLocalWasm(')[1] ?? '') &&
+      /VerifyEachNodeIsAssignedToAnEp/.test(ortFilterBody) &&
+      /window\.console\.error\s*=/.test(ortFilterBody) &&
+      !/console\.(warn|log)\s*=/.test(engineSrc),
+    'ORT 的 VerifyEachNodeIsAssignedToAnEp 良性警告经窄过滤 console.error 消除（logLevel 对 C++ 侧无效）',
+    '过滤条件限定为 VerifyEachNodeIsAssignedToAnEp，且只拦 console.error'
+  );
+
   // 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session。
   // 必须在加载模型前做冒烟测试，否则会在下载完权重后才炸出裸数字。
   check(

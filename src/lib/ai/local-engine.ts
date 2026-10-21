@@ -294,6 +294,41 @@ const CDN_WASM_DIR =
 let localWasmChecked: boolean | null = null;
 
 /**
+ * ORT 在建session 时会固定抛出两条 C++ 侧日志：
+ *   `... [W:onnxruntime:, session_state.cc:1280 VerifyEachNodeIsAssignedToAnEp]
+ *    Some nodes were not assigned to the preferred execution providers...`
+ *   `... [W:onnxruntime:, session_state.cc:1282 VerifyEachNodeIsAssignedToAnEp] Rerun...`
+ *
+ * 这是**正常行为** —— ORT 有意把 shape 类算子留在 CPU 以优化性能。
+ *
+ *⚠️ 为什么不能用 `env.backends.onnx.logLevel = 'error'` 消掉：
+ * ORT 有两套日志通道：
+ *   1. JS 侧 logger（`[W,<ISO 时间>]` 格式）—— 受 `logLevel` 控制；
+ *   2. C++/wasm 侧原生 logger（`<时间戳> [W:onnxruntime:, file:line函数]` 格式）
+ *      —— 经 emscripten 的 `console.error` 直出，**完全绕过 `logLevel`**。
+ * 上面这条属于第2 类，所以调 logLevel 无效（已实测确认）。
+ *
+ * 因此只能在 console 出口做过滤。过滤条件写得极窄：
+ * 只认 `VerifyEachNodeIsAssignedToAnEp` 这一个 ORT 内部函数名，
+ * 且必须是 console.error —— 真正的失败（含同为error 级的其它 ORT 报错）
+ * 都不含这个标识，不会被吞掉。
+ */
+const ORT_BENIGN_LOG = /VerifyEachNodeIsAssignedToAnEp/;
+
+let ortLogFilterInstalled = false;
+
+function installOrtLogFilter(): void {
+  if (ortLogFilterInstalled || typeof window === 'undefined') return;
+  const original = window.console.error.bind(window.console);
+  window.console.error = (...args: unknown[]) => {
+    const first = args[0];
+    if (typeof first === 'string' && ORT_BENIGN_LOG.test(first)) return;
+    original(...args);
+  };
+  ortLogFilterInstalled = true;
+}
+
+/**
  * 探测本地 public/ort/ 下的 wasm 是否存在。
  *
  * 存在则走同源本地加载（推荐，完全不依赖 CDN）；
@@ -342,40 +377,61 @@ async function hasLocalWasm(): Promise<boolean> {
  *                走 WebGPU 时wasm 仅作为 JSEP 的宿主胶水，仍需加载，
  *                但 numThreads 设置对 GPU 路径无意义。
  */
-async function applyLocalWasm(env: {
-  backends?: {
-    onnx?: {
-      wasm?: {
+async function applyLocalWasm(
+  env: {
+    /**
+     * Transformers.js 把 ONNX Runtime 的 env 挂在 `backends.onnx` 下，
+     * 类型是 `Partial<onnxruntime-common.Env>`（见 types/env.d.ts）。
+     */
+    backends?: { onnx?: Record<string, unknown> };
+    /** ORT 日志级别，注意它挂在 backends.onnx 上而非顶层 */
+    logLevel?: unknown;
+  },
+  device: RuntimeDevice,
+) {
+  // 取 ORT 的 env 对象。⚠️ 不是顶层 env —— wasm / logLevel / webgpu 等
+  // 全部挂在 backends.onnx 下（Transformers.js 的转接层）。
+  const ortEnv = env.backends?.onnx;
+  if (!ortEnv) {
+    console.warn('[zj-ai] 未取到 ONNX Runtime 的 env（env.backends.onnx 为空），wasm 本地化未生效');
+    return;
+  }
+  const wasm = ortEnv.wasm as
+    | {
         wasmPaths?: unknown;
-        wasmBinaryFile?: unknown;
         numThreads?: unknown;
         proxy?: unknown;
-      };
-    };
-  };
-}, device: RuntimeDevice) {
-  const wasm = env.backends?.onnx?.wasm;
-  if (!wasm) return;
+      }
+    | undefined;
+  if (!wasm) {
+    console.warn('[zj-ai] 未取到 ORT 的 wasm 配置对象（env.backends.onnx.wasm 为空），wasm 本地化未生效');
+    return;
+  }
+
+  // 压低 JS 侧日志级别（ORT 自有 logger 的格式是 `[W,<ISO时间>]`）。
+  // 注意：这**管不到**C++ 侧的 VerifyEachNodeIsAssignedToAnEp 警告，
+  // 那一类要靠下面的 installOrtLogFilter。
+  ortEnv.logLevel = 'error';
+
+  installOrtLogFilter();
 
   const useLocal = await hasLocalWasm();
   const dir = useLocal ? LOCAL_WASM_DIR : CDN_WASM_DIR;
 
-  // 目录形式：onnxruntime 会自动拼接 ort-wasm-simd-threaded.jsep.wasm 等文件名
-  wasm.wasmPaths = dir;
-  // 兜底：部分版本使用 wasmBinaryFile 字段
-  wasm.wasmBinaryFile = `${dir}ort-wasm-simd-threaded.jsep.wasm`;
+  // 用官方支持的对象形式分别指定 .wasm 与 .mjs。
+  // 只给字符串前缀也能工作，但对象形式不依赖「文件名拼接规则」，
+  // 在 ORT 升级改名时更稳（实测默认会走 CDN，必须显式覆盖两个文件）。
+  wasm.wasmPaths = {
+    wasm: `${dir}ort-wasm-simd-threaded.jsep.wasm`,
+    mjs: `${dir}ort-wasm-simd-threaded.jsep.mjs`,
+  };
 
-  if (device === 'wasm') {
-    // 单线程更稳：多线程需要 SharedArrayBuffer，
-    // 在未开启跨域隔离（COOP/COEP）的环境下会直接失败
-    wasm.numThreads = 1;
-    // 强制经由 Worker 代理执行时，jsep glue 需要 proxy 同步可用
-    wasm.proxy = false;
-  } else {
-    // WebGPU 路径：推理在 GPU 上跑，wasm 只做胶水与调度。
-    // 这里保持默认（不开proxy），避免多一次 Worker 跳转带来的延迟。
-    wasm.numThreads = 1;
-  }
+  // 单线程更稳：多线程需要 SharedArrayBuffer，
+  // 未开启跨域隔离（COOP/COEP）的环境下会直接失败。
+  // WebGPU 路径同样设为 1 —— 那里 wasm 只做 JSEP 胶水，多线程无收益。
+  wasm.numThreads = 1;
+  // 不经 Worker 代理：避免多一次跳转带来的延迟
+  wasm.proxy = false;
 
   if (!useLocal) {
     console.warn(
@@ -446,12 +502,15 @@ export async function loadLocalModel(
     await applyLocalWasm(env, rt.device);
 
     const instance = await pipeline('text-generation', modelId, {
-      // dtype 与 device 严格配套：
-      //   WebGPU → q4f16（q4 量化存储 + fp16 计算，GPU 上的正确选择）
-      //   WASM   → q4（纯量化，体积最小、不依赖 fp16 能力）
-      // ⚠️ WebGPU 上不要用 fp16：会加载完整半精度权重（体积数倍于 q4），
-      // 且部分算子在 WebGPU EP 上不受支持，表现为初始化阶段抛出
-      // 难以解读的错误（曾观测到底层直接抛出一个裸数字）。
+      // dtype 由 runtime.ts 决定：WebGPU 与 WASM 现在统一用 q4。
+      //
+      // ⚠️ 不要再把 WebGPU 改回 q4f16（这段注释曾经那样写，是错的）。
+      // 实测：同一台RTX 40 系机器、同一份 493MB Qwen1.5-0.5B 权重，
+      // q4f16 + WebGPU 必定抛裸数字失败，而 q4 + WebGPU 加载成功
+      // （61s，51 个输入全在 GPU）。详见 runtime.ts 的 RuntimeDtype 对照实验表。
+      //
+      // ⚠️ WebGPU 上更不能用 fp16：那会加载完整半精度权重（体积数倍于 q4），
+      // 且部分算子在 WebGPU EP 上不受支持。
       dtype: rt.dtype,
       // WebGPU 不可用时 transformers 会自行回退，但显式声明更可控
       device: rt.device === 'webgpu' ? 'webgpu' : 'wasm',
