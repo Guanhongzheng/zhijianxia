@@ -66,6 +66,8 @@ export interface ChatMessage {
 /** 引擎单例 —— 保证同一页面只加载一次模型 */
 let pipelinePromise: Promise<TextGenerationPipeline> | null = null;
 let loadedModelId = '';
+/** 已建立的 pipeline 实例 —— 卸载时需要显式释放其底层 ORT session */
+let activePipeline: TextGenerationPipeline | null = null;
 let state: LocalAiState = {
   status: 'idle',
   progress: 0,
@@ -461,6 +463,24 @@ export async function loadLocalModel(
 ): Promise<TextGenerationPipeline> {
   if (pipelinePromise && loadedModelId === modelId) return pipelinePromise;
 
+  // 换模型时必须等上一次加载彻底结束。
+  //
+  // ⚠️ 这里曾只把 pipelinePromise 置空就继续，那会在「卸载 → 立刻加载」时
+  // 让两次 pipeline() 并发跑。Transformers.js 与 ORT 的 wasm 运行时
+  // **不支持并发建session**：后一次会把前一次顶掉，前一次的收尾代码
+  // 随后打到已失效的 wasm 对象上，触发 emscripten 的 `unreachable()`，
+  // 控制台表现为一条无信息量的 `Aborted()`（wasm侧 abort 的空消息版本）。
+  //
+  // 该问题只在「切换模型」这条路径上偶发，因此单跑一次加载测不出来。
+  if (pipelinePromise) {
+    try {
+      await pipelinePromise;
+    } catch {
+      // 上一次本来就失败了 —— 不影响本次重新加载
+    }
+    await releaseActivePipeline();
+  }
+
   loadedModelId = modelId;
   const primary = findModelSource(readModelSource());
 
@@ -587,6 +607,7 @@ export async function loadLocalModel(
             emit({ sourceId: source.id, runtime: rt });
           }
           emit({ status: 'ready', progress: 1 });
+          activePipeline = instance as TextGenerationPipeline;
           return instance;
         } catch (err) {
           lastError = err;
@@ -690,9 +711,56 @@ export function isCacheRelatedError(err: unknown): boolean {
   return false;
 }
 
-/** 卸载模型（释放显存/内存） */
+/**
+ * 释放已建立的 pipeline 及其底层 ORT session。
+ *
+ * Transformers.js 的 pipeline 包着tokenizer + model + 两个 ONNX session，
+ * 其中 session 持有 GPU 缓冲与 wasm 堆。只把Promise 引用置空**不会**释放它们——
+ * 旧实现正是如此，于是「切换模型」时新旧两个 session 同时占着资源，
+ * 既吃不干净，又会和下一次加载撞车（表现为 wasm 侧的 `Aborted()`）。
+ *
+ * ORT 的 session 释放是异步的，且不同版本方法名不同
+ * （`dispose` / `release` / `free`），因此逐个探测，不存在就跳过。
+ */
+async function releaseActivePipeline(): Promise<void> {
+  const instance = activePipeline;
+  activePipeline = null;
+  if (!instance) return;
+
+  // pipeline 本身通常带 dispose（级联释放 session）
+  const candidates = [instance, (instance as { model?: unknown }).model];
+  for (const target of candidates) {
+    if (!target || typeof target !== 'object') continue;
+    const bag = target as Record<string, unknown>;
+    for (const key of ['dispose', 'release', 'free']) {
+      const fn = bag[key];
+      if (typeof fn === 'function') {
+        try {
+          await (fn as () => unknown).call(target);
+        } catch {
+          // 释放失败不应阻断卸载流程 —— 旧 session 可能已被 wasm abort 掉
+        }
+      }
+    }
+  }
+}
+
+/**
+ * 卸载模型（释放显存/内存）。
+ *
+ * 会等待进行中的加载结束再释放 —— 否则旧加载的收尾动作会打到
+ * 刚被释放（或正被新加载顶替）的 wasm 对象上。
+ */
 export async function unloadLocalModel() {
-  pipelinePromise = null;
+  if (pipelinePromise) {
+    try {
+      await pipelinePromise;
+    } catch {
+      // 本次加载本来就是失败的，没有可释放的 session
+    }
+    pipelinePromise = null;
+  }
+  await releaseActivePipeline();
   loadedModelId = '';
   emit({
     status: 'idle',

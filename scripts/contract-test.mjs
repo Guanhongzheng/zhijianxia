@@ -370,6 +370,23 @@ async function req(path, { method = 'GET', body, token } = {}) {
     '过滤条件限定为 VerifyEachNodeIsAssignedToAnEp，且只拦 console.error'
   );
 
+  // 卸载必须真的释放资源，且要等进行中的加载结束。
+  //
+  // ⚠️ 旧实现只把 pipelinePromise 置空就返回，既没释放 ORT session，
+  // 也没等在途加载 —— 于是「切换模型」会让两次 pipeline() 并发，
+  // 而 ORT 的 wasm 运行时不支持并发建 session，控制台表现为
+  // 一条无信息量的 `Aborted()`（emscripten abort 的空消息形式）。
+  check(
+    /async function releaseActivePipeline/.test(engineSrc) &&
+      /dispose/.test(engineSrc) &&
+      /await releaseActivePipeline\(\)/.test(engineSrc) &&
+      /export async function unloadLocalModel\(\)\s*\{[\s\S]{0,400}?await pipelinePromise/.test(
+        engineSrc,
+      ),
+    '卸载模型会释放 ORT session 并等待在途加载结束（避免并发建session 触发 Aborted()）',
+    'unload 已await 在途加载并释放 session'
+  );
+
   // 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session。
   // 必须在加载模型前做冒烟测试，否则会在下载完权重后才炸出裸数字。
   check(
