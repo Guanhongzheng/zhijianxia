@@ -124,7 +124,7 @@ export function TextSummaryCard({ ctx }: PluginComponentProps) {
       }),
     );
     if (!result) {
-      ctx.notify('摘要生成失败，请稍后重试', 'error');
+      ctx.notify(task.error || '摘要生成失败', 'error');
       return;
     }
     const item: HistoryItem = {

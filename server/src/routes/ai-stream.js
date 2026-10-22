@@ -37,6 +37,7 @@ const { requireAuth } = require('../auth');
 const { readCapabilityConfig, readConfig } = require('./ai-proxy');
 const { isValidCapability, DEFAULT_CAPABILITY, capabilityName } = require('../providers');
 const { executeTool } = require('../ai-tools');
+const { describeAiError } = require('../ai-errors');
 
 const {
   streamText,
@@ -44,7 +45,7 @@ const {
   jsonSchema,
   convertToModelMessages,
   stepCountIs,
-  createUIMessageStream,
+  toUIMessageStream,
 } = require('ai');
 
 const { createOpenAI } = require('@ai-sdk/openai');
@@ -261,13 +262,34 @@ router.post('/stream', requireAuth, async (req, res) => {
       ...(sdkTools ? { tools: sdkTools } : {}),
       abortSignal: abortController.signal,
       onError: ({ error }) => {
-        console.warn('[zj-ai-stream] 模型调用出错：', error?.message || error);
+        // 真实错误必须留档：AI SDK 默认会把一切错误替换成
+        // "An error occurred."，日志里若也存这份就永远查不出问题。
+        console.warn('[zj-ai-stream] 模型调用出错：', describeAiError(error, { base: cfg.base, model }));
       },
     });
 
-    // createUIMessageStream 把 result 转成 UIMessageChunk 流，
-    // 再 pipeUIMessageStreamToResponse 按 SSE 写回 Express。
-    const stream = createUIMessageStream({ execute: () => result.asUIMessageStream() });
+    // 把 streamText 的文本流转成 AI SDK 的 UI 消息流（UIMessageChunk 的 SSE 形态）。
+    //
+    // ⚠️ 这里曾写成 `createUIMessageStream({ execute: () => result.asUIMessageStream() })`
+    // —— `asUIMessageStream` 是 **v4 时代**的方法名，v7 已不存在。
+    // 调用它必然抛 `result.asUIMessageStream is not a function`，
+    // 于是**每一次后端模式对话都必然失败**（AI 对话面板与所有插件的 AI 功能
+    // 全都走这条路径，用户表现为「插件的 AI 功能用不了」）。
+    // v7 的正确入口是独立的 `toUIMessageStream({ stream, ... })`。
+    //
+    // ⚠️ 必须传 onError：AI SDK 的默认值是 `() => 'An error occurred.'`，
+    // 本意是不泄漏服务端细节；但本项目后端就跑在用户自己机器上，
+    // 而用户遇到的绝大多数是「配置错了 / 网络不通」——
+    // 一句无信息量的话会让用户完全无从下手（密钥错？地址错？模型名错？）。
+    // 这里改为回传可执行的中文提示（密钥在回传前已剥离）。
+    const stream = toUIMessageStream({
+      stream: result.stream,
+      ...(sdkTools ? { tools: sdkTools } : {}),
+      // 原始消息必须带上：多步工具调用时 AI SDK 依赖它回灌工具结果，
+      // 缺失会导致第二轮生成缺少上下文。
+      originalMessages: rawMessages,
+      onError: (error) => describeAiError(error, { base: cfg.base, model }),
+    });
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -289,10 +311,12 @@ router.post('/stream', requireAuth, async (req, res) => {
   } catch (err) {
     // 流还没开始写头时可以正常返回 JSON 错误
     if (!res.headersSent) {
-      return res.status(502).json({ error: `无法连接外部 AI 接口：${err?.message || '网络错误'}` });
+      return res.status(502).json({ error: describeAiError(err, { base: cfg.base, model }) });
     }
     if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ type: 'error', errorText: err?.message || '生成失败' })}\n\n`);
+      res.write(
+        `data: ${JSON.stringify({ type: 'error', errorText: describeAiError(err, { base: cfg.base, model }) })}\n\n`,
+      );
       res.end();
     }
   }

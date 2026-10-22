@@ -148,10 +148,20 @@ export interface AiRunOptions {
 
 /**
  * 统一的 AI 调用入口。
- * 优先使用流式接口，不支持时回退到一次性 chat。
+ *
+ * ⚠️ 这里曾**不检查 `ctx.ai.available` 就直接调用** ——
+ * 于是「模型还没加载」时用户点按钮只会看到一句笼统的失败提示，
+ * 不知道该去设置里加载模型、启动后端还是先登录。
+ * 现在不可用时直接抛出内核给出的**可执行**原因。
+ *
  * @returns 模型输出的纯文本
  */
 export async function runAi(ctx: PluginContext, options: AiRunOptions): Promise<string> {
+  // 内核给出的原因比插件自己猜得准（它知道是未加载 / 未启动 / 未登录）
+  if (!ctx.ai.available) {
+    throw new Error(ctx.ai.unavailableReason || '当前 AI 能力不可用');
+  }
+
   const messages: Array<{ role: 'system' | 'user'; content: string }> = [];
   if (options.system) {
     messages.push({ role: 'system', content: options.system });
@@ -165,7 +175,12 @@ export async function runAi(ctx: PluginContext, options: AiRunOptions): Promise<
   };
 
   const response = await ctx.ai.chat(request);
-  return (response?.text ?? '').trim();
+  const text = (response?.text ?? '').trim();
+  // 模型可能返回空串（例如只吐了模板标记），此时给出明确原因而非让插件显示空白
+  if (!text) {
+    throw new Error('模型没有返回任何内容，请换个说法再试一次');
+  }
+  return text;
 }
 
 /**
@@ -177,6 +192,10 @@ export async function runAiStream(
   options: AiRunOptions,
   onChunk: (chunk: string) => void,
 ): Promise<string> {
+  if (!ctx.ai.available) {
+    throw new Error(ctx.ai.unavailableReason || '当前 AI 能力不可用');
+  }
+
   const messages: Array<{ role: 'system' | 'user'; content: string }> = [];
   if (options.system) {
     messages.push({ role: 'system', content: options.system });
@@ -185,7 +204,11 @@ export async function runAiStream(
 
   if (typeof ctx.ai.streamChat === 'function') {
     let full = '';
-    const iterable = ctx.ai.streamChat({ messages, temperature: options.temperature ?? 0.7 });
+    const iterable = ctx.ai.streamChat({
+      messages,
+      temperature: options.temperature ?? 0.7,
+      maxTokens: options.maxTokens,
+    });
     for await (const chunk of iterable) {
       if (!chunk) continue;
       full += chunk;

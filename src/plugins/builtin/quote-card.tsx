@@ -65,7 +65,7 @@ export function QuoteCard({ ctx }: PluginComponentProps) {
       }),
     );
     if (!text) {
-      ctx.notify('语录生成失败，请稍后重试', 'error');
+      ctx.notify(task.error || '语录生成失败', 'error');
     }
   }, [ctx, task]);
 

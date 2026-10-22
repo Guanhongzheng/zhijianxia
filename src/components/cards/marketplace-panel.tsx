@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  Code2,
   Download,
   Info,
   Package,
@@ -93,6 +94,8 @@ function PluginMarketplace() {
   const notify = useAppStore((s) => s.notify);
 
   const [keyword, setKeyword] = useState('');
+  /** 「开发插件」指引弹窗 */
+  const [devGuideOpen, setDevGuideOpen] = useState(false);
   const [category, setCategory] = useState('all');
   const [detail, setDetail] = useState<MarketplaceEntry | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -235,9 +238,19 @@ function PluginMarketplace() {
           }}
         />
         <Button
+          variant="ghost"
+          onClick={() => setDevGuideOpen(true)}
+          title="如何自己开发一个插件"
+          className="shrink-0"
+        >
+          <Code2 className="size-3.5" />
+          开发插件
+        </Button>
+        <Button
           variant="outline"
           onClick={() => fileRef.current?.click()}
           disabled={!!installing}
+          className="shrink-0"
         >
           {installing ? (
             <Skeleton className="size-4" />
@@ -247,6 +260,116 @@ function PluginMarketplace() {
           导入插件
         </Button>
       </div>
+
+      {/* 开发指引：把「怎么自己写插件」摆在显眼处 */}
+      <Dialog open={devGuideOpen} onOpenChange={setDevGuideOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>开发你自己的插件</DialogTitle>
+            <DialogDescription>
+              与主题包同一个思路：宿主提供能力与协议，你只声明用法。
+              全程不需要 npm install，也不需要打包工具。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1 text-sm">
+            <section className="space-y-2">
+              <h4 className="font-medium">第 1 步 · 生成工程</h4>
+              <pre className="overflow-x-auto rounded-md bg-[var(--zj-muted)] p-3 text-xs">
+                {`npm run plugin:new -- my-plugin "我的插件"`}
+              </pre>
+              <p className="text-xs text-[var(--zj-muted-fg)]">
+                会生成 <code className="rounded bg-[var(--zj-muted)] px-1">my-plugins/my-plugin/</code>
+                ，其中 <code className="rounded bg-[var(--zj-muted)] px-1">plugin.js</code>{' '}
+                就是你的全部源码。
+              </p>
+            </section>
+
+            <section className="space-y-2">
+              <h4 className="font-medium">第 2 步 · 写代码</h4>
+              <pre className="overflow-x-auto rounded-md bg-[var(--zj-muted)] p-3 text-xs leading-relaxed">
+                {`export const manifest = {
+  id: 'my-plugin',
+  name: '我的插件',
+  version: '1.0.0',
+  description: '一句话说明',
+  category: '效率',
+  icon: 'Sparkles',
+};
+
+function MyPlugin({ ctx }) {
+  const task = useAiTask();
+
+  const ask = () => task.run(() =>
+    runAi(ctx, { user: '打个招呼', maxTokens: 80 }),
+  );
+
+  return h(
+    Card,
+    null,
+    h(Button, {
+      onClick: ask,
+      disabled: task.loading || !ctx.ai.available,
+    }, task.loading ? '生成中…' : '发送'),
+    task.result && h('p', { className: 'text-sm' }, task.result),
+  );
+}
+
+export const Component = MyPlugin;
+export default { manifest, Component };`}
+              </pre>
+              <p className="text-xs text-[var(--zj-muted-fg)]">
+                React hooks、UI 组件、图标、AI 能力都由宿主注入，
+                <b>不要写 import from 'react'</b>。
+              </p>
+            </section>
+
+            <section className="space-y-2">
+              <h4 className="font-medium">第 3 步 · 打包并导入</h4>
+              <pre className="overflow-x-auto rounded-md bg-[var(--zj-muted)] p-3 text-xs">
+                {`cd my-plugins/my-plugin && node build.mjs`}
+              </pre>
+              <p className="text-xs text-[var(--zj-muted-fg)]">
+                生成的 <code className="rounded bg-[var(--zj-muted)] px-1">.plugin</code>{' '}
+                文件用上方「导入插件」选中即可使用。
+              </p>
+            </section>
+
+            <section className="space-y-2 rounded-md bg-[var(--zj-accent-soft)] p-3">
+              <h4 className="font-medium">可用的运行时能力</h4>
+              <ul className="space-y-1 text-xs text-[var(--zj-muted-fg)]">
+                <li>
+                  <b>React</b>：useState / useEffect / useMemo / useCallback / useRef
+                </li>
+                <li>
+                  <b>UI</b>：Card / Button / Input / Textarea / Badge / Progress / Skeleton /
+                  Tabs / Dialog / Select 等
+                </li>
+                <li>
+                  <b>AI</b>：runAi（一次性）/ runAiStream（流式）—— 本地模型与后端转发由内核自动路由
+                </li>
+                <li>
+                  <b>图标</b>：icon.Sparkles 等 lucide 全量（约 4900 个）
+                </li>
+                <li>
+                  <b>设计变量</b>：tokens.accent / tokens.fg / tokens.card（跟随主题变化）
+                </li>
+                <li>
+                  <b>存储</b>：ctx.storage（命名空间隔离）、useStoredState
+                </li>
+              </ul>
+            </section>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDevGuideOpen(false)}>
+              知道了
+            </Button>
+            <Button onClick={() => setDevGuideOpen(false)}>
+              <Upload className="size-3.5" />
+              导入现成的 .plugin
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 分类筛选 */}
       <div className="zj-hide-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">

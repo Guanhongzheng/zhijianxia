@@ -137,6 +137,13 @@ export interface PluginAIResponse {
 export interface PluginAI {
   /** 当前是否可用（模型未加载完成时为 false） */
   readonly available: boolean;
+  /**
+   * 不可用的原因（可用时为空串）。
+   *
+   * 插件应据此提示用户「去做什么」，而不是只显示「AI 不可用」——
+   * 常见原因只有几种：模型未加载、后端未启动、未登录。
+   */
+  readonly unavailableReason?: string;
   /** 当前推理通道 */
   readonly mode: 'local' | 'backend' | 'offline';
   /** 一次性对话 */

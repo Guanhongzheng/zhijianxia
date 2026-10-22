@@ -15,6 +15,7 @@
 - [项目目录](#项目目录)
 - [核心架构](#核心架构)
 - [插件开发模板](#插件开发模板)
+- [第三方插件开发（免构建）](#第三方插件开发免构建)
 - [Git 与 GitHub](#git-与-github)
 - [常见问题](#常见问题)
 
@@ -896,6 +897,101 @@ export default MyPlugin;
 4. 插件存储使用 `ctx.storage`，**禁止**直接读写 `localStorage`
 5. 插件 UI 保持扁平卡片风格，注释使用中文
 6. 插件 id 必须 kebab-case 且全局唯一
+
+---
+
+## 第三方插件开发（免构建）
+
+上面那套是**在本仓库内**开发插件的方式（能用 `@/` 路径别名、能写 TSX）。
+如果你想写一个**独立于本仓库**、分发给所有人的插件，用下面这套 ——
+思路与主题包完全一致：**宿主提供能力与协议，创作者只声明用法**。
+
+### 一条命令起步
+
+```bash
+npm run plugin:new -- my-plugin "我的插件"
+```
+
+产物在 `my-plugins/my-plugin/`：
+
+| 文件 | 作用 |
+| --- | --- |
+| `plugin.js` | 你的全部源码 |
+| `build.mjs` | 打包成 `.plugin` |
+| `README.md` | 给自己的说明 |
+
+改完 `plugin.js` 后：
+
+```bash
+node build.mjs
+```
+
+然后在智简匣里「功能广场 → 导入插件」选中生成的 `.plugin` 即可。
+
+### 为什么不需要打包工具
+
+插件代码以 `Blob URL + 动态 import()` 执行，这类模块**无法解析裸导入**
+（`import { useState } from 'react'` 必然失败）。宿主因此提前把 React 与
+UI 组件挂到 `globalThis.ZJ`，并在加载时于源码首部注入一段 shim，
+让 `import ... from '@zhijianxia/runtime'` 兑现为对全局 SDK 的解构。
+
+```js
+// 插件源码照常写 ESM 导入，但不需要任何构建
+import { useState, Button, runAi } from '@zhijianxia/runtime';
+```
+
+### 可用能力
+
+| 类别 | 名称 |
+| --- | --- |
+| React | `useState` `useEffect` `useMemo` `useCallback` `useRef` `Fragment` `memo` |
+| JSX | `h`（`createElement` 别名） |
+| 插件 hooks | `useAiTask` `useStoredState` `useInterval` `usePluginTheme` |
+| AI | `runAi`（一次性）/ `runAiStream`（流式） |
+| UI 组件 | `Card` `Button` `Input` `Textarea` `Badge` `Progress` `Skeleton` `Tabs` `Dialog` `Select` 等 |
+| 图标 | `icon.Sparkles`（lucide 全量，约 4900 个） |
+| 设计变量 | `tokens.accent` `tokens.fg` `tokens.card` `tokens.border` … |
+| 工具 | `cx` `isBlank` `formatRelativeTime` |
+
+### 完整示例
+
+```js
+export const manifest = {
+  id: 'my-plugin',
+  name: '我的插件',
+  version: '1.0.0',
+  description: '一句话说明',
+  category: '效率',
+  icon: 'Sparkles',
+};
+
+function MyPlugin({ ctx }) {
+  const [text, setText] = useState('');
+  const task = useAiTask();
+
+  const ask = async () => {
+    await task.run(() => runAi(ctx, { user: text || '打个招呼', maxTokens: 80 }));
+  };
+
+  return h(
+    Card,
+    { className: 'gap-3' },
+    h(Textarea, { value: text, onChange: (e) => setText(e.target.value), rows: 3 }),
+    h(Button, { onClick: ask, disabled: task.loading || !ctx.ai.available },
+      task.loading ? '生成中…' : '发送'),
+    // AI 不可用时给出可执行提示（模型未加载 / 未登录 / 后端未启动）
+    !ctx.ai.available &&
+      h('p', { className: 'text-xs text-[var(--zj-danger)]' }, ctx.ai.unavailableReason),
+    task.error && h('p', { className: 'text-xs text-[var(--zj-danger)]' }, task.error),
+    task.result && h('p', { className: 'text-sm' }, task.result),
+  );
+}
+
+export const Component = MyPlugin;
+export default { manifest, Component };
+```
+
+完整文档见 **[docs/PLUGIN-GUIDE.md](docs/PLUGIN-GUIDE.md)**。
 
 ---
 

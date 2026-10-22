@@ -63,3 +63,6 @@ verify-*.mjs
 
 # 自动化验证用的临时浏览器 profile
 .tmp-verify-profile/
+
+# 第三方插件本地工程（由 npm run plugin:new 生成，属个人草稿）
+my-plugins/

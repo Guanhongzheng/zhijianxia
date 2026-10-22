@@ -35,6 +35,7 @@ import {
   parsePluginPackage,
   CORE_VERSION,
 } from './packager';
+import { installPluginRuntime } from './runtime';
 import type {
   PluginAI,
   PluginContext,
@@ -49,6 +50,7 @@ export * from './registry';
 export * from './loader';
 export * from './packager';
 export * from './marketplace';
+export * from './runtime';
 export { createPluginContext, createPluginStorage, type ThemeBridge } from './context';
 export { THEME_PACKS, findThemePack } from './theme-packs';
 export { useAiTask, usePluginTheme, useStoredState, useInterval } from './hooks';
@@ -108,6 +110,17 @@ export interface PluginKernel {
 export function createPluginKernel(init: PluginKernelInit): PluginKernel {
   const registry = init.registry ?? pluginRegistry;
   let booted = false;
+
+  // ⚠️ 必须在任何第三方插件代码执行**之前**挂好运行时 SDK。
+  //
+  // 插件包里的代码以 Blob URL + 动态 import() 执行，无法解析裸模块导入
+  // （`import { useState } from 'react'` 在 blob: 模块里必然失败），
+  // 因此宿主必须提前把 React、UI 组件、hooks 挂到 `globalThis.ZJ`，
+  // 插件代码才能免构建地直接取用。
+  //
+  // 放在这里而不是 boot() 里，是为了让 `kernel.createContext()` 这类
+  // 不经过 boot 的路径也具备 SDK。
+  installPluginRuntime(CORE_VERSION);
 
   /** 为插件创建上下文 */
   const createCtx = (pluginId: string): PluginContext =>

@@ -111,7 +111,7 @@ export function RecipeAssistantCard({ ctx }: PluginComponentProps) {
       }),
     );
     if (!result) {
-      ctx.notify('菜谱生成失败，请稍后重试', 'error');
+      ctx.notify(task.error || '菜谱生成失败', 'error');
       return;
     }
     const parsed = parseJsonLoose<Partial<Recipe>>(result);

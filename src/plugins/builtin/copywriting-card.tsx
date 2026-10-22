@@ -128,7 +128,7 @@ export function CopywritingCard({ ctx }: PluginComponentProps) {
       }),
     );
     if (!text) {
-      ctx.notify('文案生成失败，请稍后重试', 'error');
+      ctx.notify(task.error || '文案生成失败', 'error');
     }
   }, [ctx, input, mode, style, task]);
 

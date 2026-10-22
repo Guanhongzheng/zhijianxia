@@ -107,14 +107,36 @@ export async function loadAllPreinstalled(): Promise<PluginModule[]> {
 
 /**
  * 将 ESM 源码转换为 Blob URL 并动态导入。
- * 注意：Blob 模块内的裸导入（如 'react'）无法解析，
- * 因此第三方插件应以「已打包的独立产物」形式提供。
+ *
+ * ⚠️ **Blob 模块内的裸导入无法解析** —— 浏览器不知道 `react` 指向哪个文件，
+ * 所以第三方插件不能写 `import { useState } from 'react'`。
+ *
+ * 这里在源码**首部注入一段 shim**，把宿主 SDK 变成一个具名导入：
+ *
+ * ```js
+ * import { useState, Button, runAi } from '@zhijianxia/runtime';
+ * ```
+ *
+ * 这行导入会命中我们注入的 `const { ... } = globalThis.ZJ`，其余代码原样执行。
+ * 这样第三方开发者既能写正常的 ESM 导入语法，又完全不需要构建步骤。
+ *
+ * 之所以不用 `import maps`：它需要在 HTML 里静态声明，
+ * 而插件是运行时动态加载的，无法预先登记。
  */
 async function importEsmSource(source: string): Promise<unknown> {
   if (typeof window === 'undefined' || typeof URL.createObjectURL !== 'function') {
     throw new Error('插件加载失败：当前环境不支持 Blob 动态导入');
   }
-  const blob = new Blob([source], { type: 'text/javascript' });
+
+  // shim：把 globalThis.ZJ 解构成具名导出。
+  // 用 `var` 而非 `const` 是为了避免插件自身也声明同名变量时冲突。
+  const shim = [
+    'var __zj_sdk = globalThis.ZJ;',
+    'if (!__zj_sdk) { throw new Error("插件加载失败：宿主运行时未就绪（globalThis.ZJ 为空），请升级智简匣后重试"); }',
+    `var { ${RUNTIME_EXPORT_NAMES.join(', ')} } = __zj_sdk;`,
+  ].join('\n');
+
+  const blob = new Blob([shim, '\n', source], { type: 'text/javascript' });
   const url = URL.createObjectURL(blob);
   try {
     return await import(/* webpackIgnore: true */ url);
@@ -122,6 +144,78 @@ async function importEsmSource(source: string): Promise<unknown> {
     URL.revokeObjectURL(url);
   }
 }
+
+/**
+ * shim 里解构出来的名字。
+ *
+ * 必须与 runtime.ts 的 PluginRuntimeSdk 保持一致 ——
+ * 少一个名字，插件里对应的导入就会变成 undefined（且只在运行时才炸）。
+ */
+const RUNTIME_EXPORT_NAMES = [
+  'h',
+  'Fragment',
+  'useState',
+  'useEffect',
+  'useMemo',
+  'useCallback',
+  'useRef',
+  'useReducer',
+  'useContext',
+  'createContext',
+  'useLayoutEffect',
+  'useId',
+  'memo',
+  'cx',
+  'isBlank',
+  'formatRelativeTime',
+  'useAiTask',
+  'useStoredState',
+  'useInterval',
+  'usePluginTheme',
+  'runAi',
+  'runAiStream',
+  'Button',
+  'Input',
+  'Textarea',
+  'Card',
+  'CardHeader',
+  'CardTitle',
+  'CardContent',
+  'Badge',
+  'Switch',
+  'Slider',
+  'Progress',
+  'Label',
+  'Separator',
+  'Skeleton',
+  'Tabs',
+  'TabsList',
+  'TabsTrigger',
+  'TabsContent',
+  'Dialog',
+  'DialogContent',
+  'DialogHeader',
+  'DialogTitle',
+  'DialogDescription',
+  'DialogFooter',
+  'DropdownMenu',
+  'DropdownMenuTrigger',
+  'DropdownMenuContent',
+  'DropdownMenuItem',
+  'Select',
+  'SelectTrigger',
+  'SelectValue',
+  'SelectContent',
+  'SelectItem',
+  'Tooltip',
+  'TooltipProvider',
+  'TooltipTrigger',
+  'TooltipContent',
+  'icons',
+  'icon',
+  'tokens',
+  'coreVersion',
+];
 
 /** 在受限沙箱中执行 CommonJS 风格源码 */
 function runCjsSource(source: string, moduleExports: Record<string, unknown>): void {

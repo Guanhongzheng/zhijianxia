@@ -503,7 +503,7 @@ export function MusicPlayerCard({ ctx }: PluginComponentProps) {
       }),
     );
     if (!result) {
-      ctx.notify('推荐失败，请稍后重试', 'error');
+      ctx.notify(task.error || '推荐失败', 'error');
       return;
     }
     try {

@@ -707,6 +707,115 @@ async function req(path, { method = 'GET', body, token } = {}) {
     '圆角变量已排除'
   );
 
+  // ---------- 后端 AI 错误必须可读（不能是 "An error occurred."）----------
+  // AI SDK 的 createUIMessageStream 默认 onError 返回 "An error occurred."，
+  // 把真实错误全吞掉 —— 用户看到这句完全无从下手。
+  // 而本项目后端就跑在用户机器上，绝大多数失败是「配置错了 / 网络不通」。
+  const aiErrorsSrc = readFileSync(
+    new URL('../server/src/ai-errors.js', import.meta.url),
+    'utf8',
+  );
+  const aiStreamSrc = readFileSync(
+    new URL('../server/src/routes/ai-stream.js', import.meta.url),
+    'utf8',
+  );
+  const aiProxySrc = readFileSync(
+    new URL('../server/src/routes/ai-proxy.js', import.meta.url),
+    'utf8',
+  );
+  check(
+    /STATUS_HINTS/.test(aiErrorsSrc) &&
+      /redactSecrets/.test(aiErrorsSrc) &&
+      /toUIMessageStream\(\{/.test(aiStreamSrc) &&
+      /onError: \(error\) => describeAiError/.test(aiStreamSrc) &&
+      /describeAiError/.test(aiProxySrc),
+    '后端 AI 错误可读化：不用 AI SDK 默认的 "An error occurred."，改为可执行的中文提示',
+    '错误已可读化（密钥在回传前剥离）',
+  );
+
+  // ⚠️ AI SDK v7 里 asUIMessageStream 已不存在，正确入口是独立的 toUIMessageStream。
+  // 写成 asUIMessageStream 会让每一次后端模式对话都必然失败。
+  //
+  // ⚠️ 断言必须排除注释：这段代码的注释里恰好写着旧方法名（作为踩坑记录），
+  // 直接全文匹配会误判。做法是按行过滤掉注释行后再查。
+  const aiStreamCode = aiStreamSrc
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join('\n');
+  check(
+    !/asUIMessageStream/.test(aiStreamCode) &&
+      /stream: result\.stream/.test(aiStreamCode) &&
+      /originalMessages: rawMessages/.test(aiStreamCode),
+    '后端流式接口使用 v7 的 toUIMessageStream（asUIMessageStream 在 v7 已不存在）',
+    '已迁移到 v7 API，并回传 originalMessages 支撑多步工具调用',
+  );
+
+  // ---------- 插件 AI 必须可用且给出可执行提示 ----------
+  const pluginStoreSrc = readFileSync(
+    new URL('../src/store/plugin-store.ts', import.meta.url),
+    'utf8',
+  );
+  const pluginUtilsSrc = readFileSync(
+    new URL('../src/plugins/utils.ts', import.meta.url),
+    'utf8',
+  );
+  const pluginTypesSrc = readFileSync(
+    new URL('../src/plugins/types.ts', import.meta.url),
+    'utf8',
+  );
+  check(
+    // 必须实现 streamChat：此前类型里声明为可选却从未实现，
+    // 导致 runAiStream 永远退化到一次性返回
+    /async \*streamChat/.test(pluginStoreSrc) &&
+      // 必须暴露 unavailableReason，让插件能提示「去做什么」
+      /unavailableReason/.test(pluginTypesSrc) &&
+      /ctx\.ai\.unavailableReason/.test(pluginUtilsSrc) &&
+      // runAi 要先检查 available，不能让用户点按钮只看到笼统失败
+      /if \(!ctx\.ai\.available\)/.test(pluginUtilsSrc),
+    '插件 AI：实现 streamChat、暴露 unavailableReason，并在调用前检查可用性',
+    '插件 AI 已打通且失败可读',
+  );
+
+  // ---------- 第三方插件必须能免构建运行 ----------
+  const pjRuntimeSrc = readFileSync(
+    new URL('../src/plugins/runtime.ts', import.meta.url),
+    'utf8',
+  );
+  const pjLoaderSrc = readFileSync(
+    new URL('../src/plugins/loader.ts', import.meta.url),
+    'utf8',
+  );
+  const pjKernelSrc = readFileSync(
+    new URL('../src/plugins/index.ts', import.meta.url),
+    'utf8',
+  );
+  check(
+    // 宿主必须把 React / UI 挂到全局，否则 blob 模块无法 import react
+    /installPluginRuntime/.test(pjRuntimeSrc) &&
+      /\.ZJ = buildSdk/.test(pjRuntimeSrc) &&
+      // loader 必须在源码首部注入 shim，把 '@zhijianxia/runtime' 兑现为全局 SDK
+      /__zj_sdk = globalThis\.ZJ/.test(pjLoaderSrc) &&
+      /RUNTIME_EXPORT_NAMES/.test(pjLoaderSrc) &&
+      /installPluginRuntime\(CORE_VERSION\)/.test(pjKernelSrc),
+    '第三方插件免构建运行：宿主注入 globalThis.ZJ 运行时，loader 为 blob 模块注入 shim',
+    '运行时 SDK 已挂载，shim 已注入',
+  );
+
+  // shim 解构的名字必须与 SDK 提供的字段一致，否则插件运行时才炸（且报错难懂）
+  const shimBody = (pjLoaderSrc.split('RUNTIME_EXPORT_NAMES = [')[1] || '').split(']')[0];
+  const shimNames = shimBody
+    .split(',')
+    .map((x) => x.trim().replace(/^'|'$/g, ''))
+    .filter(Boolean);
+  const missing = shimNames.filter(
+    (n) => !pjRuntimeSrc.includes(`  ${n},`) && !pjRuntimeSrc.includes(`  ${n}:`),
+  );
+  check(
+    shimNames.length > 40 && missing.length === 0,
+    `shim 解构的 ${shimNames.length} 个名字在运行时 SDK 中全部存在（防止第三方插件运行时才报 undefined）`,
+    missing.length === 0 ? `shim 与 SDK 字段一致（${shimNames.length} 项）` : `缺少：${missing.join(', ')}`,
+  );
+
   // 清理
   await req(`/api/groups/${groupId}`, { method: 'DELETE', token: tokenA });
   await req(`/api/notices/${noticeId}`, { method: 'DELETE', token: adminToken });

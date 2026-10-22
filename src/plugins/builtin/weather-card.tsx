@@ -139,7 +139,7 @@ export function WeatherCard({ ctx }: PluginComponentProps) {
       }),
     );
     if (!text) {
-      ctx.notify('天气建议生成失败，请稍后重试', 'error');
+      ctx.notify(advice.error || '天气建议生成失败', 'error');
     }
   }, [advice, ctx, city, weather]);
 

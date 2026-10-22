@@ -26,6 +26,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { getSetting, setSetting, deleteSetting, DATA_DIR } = require('../db');
 const { requireAuth, requireAdmin } = require('../auth');
+const { describeAiError } = require('../ai-errors');
 const {
   catalog,
   CAPABILITY_IDS,
@@ -801,7 +802,11 @@ router.post('/chat', requireAuth, async (req, res) => {
     if (err?.name === 'AbortError') {
       return res.status(504).json({ error: `外部 AI 接口请求超时（${timeout}ms）` });
     }
-    return res.status(502).json({ error: `无法连接外部 AI 接口：${err?.message || '网络错误'}` });
+    // 统一走可读化：这里原先只回「无法连接外部 AI 接口：fetch failed」，
+    // 用户既不知道是地址不通还是 Key 错，也不知道该改哪一项。
+    return res.status(502).json({
+      error: describeAiError(err, { base: cfg.base, model: cfg.model }),
+    });
   }
 });
 

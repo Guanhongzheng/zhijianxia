@@ -139,7 +139,7 @@ export function MemoCard({ ctx }: PluginComponentProps) {
     );
 
     if (!result) {
-      ctx.notify('AI 整理失败，请稍后重试', 'error');
+      ctx.notify(task.error || 'AI 整理失败', 'error');
       return;
     }
 

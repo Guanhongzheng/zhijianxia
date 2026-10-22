@@ -13,9 +13,11 @@ import { useAppStore } from './app-store';
 import { useAuthStore } from './auth-store';
 import { useThemeStore, readThemeSnapshot } from './theme-store';
 import { aiChat } from '@/lib/ai/scheduler';
-import { getLocalAiState } from '@/lib/ai/local-engine';
+import { getLocalAiState, localChatStream } from '@/lib/ai/local-engine';
+import { backendStreamChat } from '@/lib/backend/ai-stream';
 import { idbGet, idbSet } from '@/lib/storage/idb';
 import { readLocal } from '@/lib/utils';
+import { describePluginAiError } from '@/lib/ai/plugin-ai-errors';
 
 const INSTALLED_KEY = 'zj-plugin-installed';
 
@@ -75,27 +77,142 @@ const themeBridge = {
   applyThemePack: (id: string) => useThemeStore.getState().applyThemePack(id),
 };
 
-/** 统一的插件 AI 适配器 */
+/**
+ * 统一的插件 AI 适配器。
+ *
+ * ⚠️ 这里曾经只有 `chat`，且 `available` 是个**永远不参与重渲染**的 getter ——
+ * 插件在渲染时读它，拿到的可能是「模型还没加载完」时的旧值，
+ * 于是按钮永远点不动、或点了就报错，用户完全无从下手。
+ *
+ * 现在补齐三件事：
+ * 1. `available` 区分「可用」与「为什么不可用」，插件据此给出可执行提示；
+ * 2. `chat` 失败时抛出**中文可读**错误（插件的 UI 直接展示它）；
+ * 3. 实现 `streamChat` —— 类型里声明为可选，但此前从未实现，
+ *    导致 `runAiStream` 永远退化到一次性返回。
+ */
 function createPluginAI(): PluginAI {
   return {
     get available() {
       const { api, backendOnline } = useAppStore.getState();
-      if (api.mode === 'backend') return backendOnline;
+      if (api.mode === 'backend') return backendOnline && !!useAuthStore.getState().token;
       return getLocalAiState().status === 'ready';
     },
+
+    /**
+     * 不可用的原因。插件可据此提示用户去做什么，
+     * 而不是只说「AI 不可用」。
+     */
+    get unavailableReason(): string {
+      const { api, backendOnline } = useAppStore.getState();
+      if (api.mode !== 'backend') {
+        const status = getLocalAiState().status;
+        if (status === 'ready') return '';
+        return status === 'loading'
+          ? '本地模型正在加载，请稍候'
+          : '本地模型尚未加载，请到「系统设置 → AI 引擎」点击「加载模型」';
+      }
+      if (!useAuthStore.getState().token) return '请先登录后再使用 AI 能力';
+      if (!backendOnline) return '后端服务未开启，请先启动后端服务';
+      return '';
+    },
+
     get mode() {
       const { api } = useAppStore.getState();
       return api.mode === 'backend' ? 'backend' : 'local';
     },
+
     async chat(request) {
       const { api, lan } = useAppStore.getState();
       const token = useAuthStore.getState().token;
-      const text = await aiChat(
-        { mode: api.mode, lan, token },
-        request.messages.map((m) => ({ role: m.role, content: m.content })),
-        { maxTokens: request.maxTokens, temperature: request.temperature },
-      );
-      return { text, model: api.mode === 'backend' ? api.model : '本地模型' };
+
+      if (api.mode === 'backend' && !token) {
+        throw new Error('请先登录后再使用 AI 能力');
+      }
+      if (api.mode === 'backend' && !useAppStore.getState().backendOnline) {
+        throw new Error('后端服务未开启，请先启动后端服务');
+      }
+
+      try {
+        const text = await aiChat(
+          { mode: api.mode, lan, token },
+          request.messages.map((m) => ({ role: m.role, content: m.content })),
+          { maxTokens: request.maxTokens, temperature: request.temperature },
+        );
+        return { text, model: api.mode === 'backend' ? api.model : '本地模型' };
+      } catch (err) {
+        // 直接把后端/推理层的可读错误抛给插件 ——
+        // 插件的 UI 会原样展示，比「AI 调用失败」有信息量得多。
+        throw new Error(describePluginAiError(err));
+      }
+    },
+
+    /**
+     * 流式对话。
+     *
+     * 后端模式下必须显式关掉工具：AI SDK 的工具调用需要前端回灌
+     * `addToolResult` 才能进入第二轮，而这里只消费正文增量，
+     * 让工具流半途停在 tool-input 反而会让插件拿到空文本。
+     */
+    async *streamChat(request) {
+      const { api, lan } = useAppStore.getState();
+      const token = useAuthStore.getState().token;
+
+      if (api.mode === 'backend') {
+        if (!token) throw new Error('请先登录后再使用 AI 能力');
+        if (!useAppStore.getState().backendOnline) {
+          throw new Error('后端服务未开启，请先启动后端服务');
+        }
+        const res = await backendStreamChat(
+          lan,
+          token,
+          [
+            {
+              id: 'plugin',
+              role: 'user',
+              parts: request.messages.map((m) => ({ type: 'text', text: m.content })),
+            } as never,
+          ],
+          undefined,
+          false,
+        );
+        if (!res.ok || !res.body) {
+          const detail = await res.text().catch(() => '');
+          throw new Error(detail || `后端返回 ${res.status}`);
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          // SSE 以空行分隔事件
+          const parts = buffer.split(/\r?\n\r?\n/);
+          buffer = parts.pop() ?? '';
+          for (const raw of parts) {
+            const line = raw.split(/\r?\n/).find((l) => l.startsWith('data:'));
+            if (!line) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === '[DONE]') continue;
+            try {
+              const chunk = JSON.parse(payload) as { type?: string; delta?: string; errorText?: string };
+              if (chunk.type === 'error') throw new Error(chunk.errorText || 'AI 调用失败');
+              if (chunk.type === 'text-delta' && chunk.delta) yield chunk.delta;
+            } catch (err) {
+              if (err instanceof Error && err.message !== 'Unexpected end of JSON input') throw err;
+            }
+          }
+        }
+        return;
+      }
+
+      // 本地模式：逐 token 增量
+      for await (const delta of localChatStream(
+        request.messages.map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+        { maxTokens: request.maxTokens, temperature: request.temperature, signal: request.signal },
+      )) {
+        yield delta;
+      }
     },
   };
 }

@@ -172,7 +172,7 @@ export function PomodoroCard({ ctx }: PluginComponentProps) {
       }),
     );
     if (!result) {
-      ctx.notify('专注计划生成失败，请稍后重试', 'error');
+      ctx.notify(task.error || '专注计划生成失败', 'error');
       return;
     }
     try {
