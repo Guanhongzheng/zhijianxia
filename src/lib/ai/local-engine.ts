@@ -60,6 +60,8 @@ export interface LocalAiState {
 
 /** 模型源在 localStorage 中的键 */
 const SOURCE_KEY = 'zj-model-source';
+/** 用户在设置里选中的模型 id（与「已加载的模型」是两回事） */
+const SELECTED_KEY = 'zj-selected-model';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -122,6 +124,37 @@ export function saveModelSource(sourceId: ModelSourceId) {
     /* 忽略 */
   }
   emit({ sourceId });
+}
+
+/**
+ * 读取用户在设置里**选中**的模型 id。
+ *
+ * 为什么需要单独记：
+ * - `loadedModelId` 是「已经加载起来的」模型；
+ * - 而 AI 对话、调度器等路径调用 `loadLocalModel()` 时不传参，
+ *   若不记这个值，它们会去加载**硬编码的默认模型**，
+ *   于是出现「用户在设置里加载了 1.5B，AI 对话却在偷偷加载 0.5B」——
+ *   而 0.5B 往往没下载过，现场下几百 MB 甚至直接失败。
+ */
+export function readSelectedModel(): string {
+  if (typeof window === 'undefined') return DEFAULT_LOCAL_MODEL;
+  try {
+    const raw = window.localStorage.getItem(SELECTED_KEY);
+    if (raw) return raw;
+  } catch {
+    /* 忽略 */
+  }
+  return DEFAULT_LOCAL_MODEL;
+}
+
+/** 持久化用户选中的模型 id */
+export function saveSelectedModel(modelId: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SELECTED_KEY, modelId);
+  } catch {
+    /* 忽略 */
+  }
 }
 
 export function isLocalAiReady(): boolean {
@@ -487,7 +520,15 @@ async function applyLocalWasm(
  *    不做降级会让「能跑」变成「看运气」。
  */
 export async function loadLocalModel(
-  modelId: string = DEFAULT_LOCAL_MODEL,
+  /**
+   * 要加载的模型 id。
+   *
+   * ⚠️ **不传时用「用户选中的模型」，不是硬编码的默认模型**。
+   * AI 对话、调度器等路径都是无参调用，若这里回落到默认模型，
+   * 就会出现「用户在设置里加载了 1.5B，AI 对话却在偷偷加载 0.5B」——
+   * 0.5B 往往没下载过，于是现场下载几百 MB，甚至直接加载失败。
+   */
+  modelId: string = readSelectedModel(),
   onProgress?: (ratio: number) => void,
 ): Promise<TextGenerationPipeline> {
   if (pipelinePromise && loadedModelId === modelId) return pipelinePromise;
@@ -830,7 +871,10 @@ export async function unloadLocalModel() {
   emit({
     status: 'idle',
     progress: 0,
-    modelId: DEFAULT_LOCAL_MODEL,
+    // ⚠️ 卸载后 modelId 要**清空**，不能复位成默认模型。
+    // 复位会让「运行中」徽标错挂到默认模型（列表第一项）头上 ——
+    // 判定只看 modelId 时就会看到「第一个还显示运行中」。
+    modelId: '',
     sourceId: readModelSource(),
   });
 }

@@ -37,11 +37,12 @@ import {
   unloadLocalModel,
   saveModelSource,
   readModelSource,
+  readSelectedModel,
+  saveSelectedModel,
   findModelSource,
   purgeModelCache,
   LOCAL_MODEL_OPTIONS,
   MODEL_SOURCES,
-  DEFAULT_LOCAL_MODEL,
   readRuntimePref,
   resolveRuntime,
   switchRuntime,
@@ -140,7 +141,9 @@ function AiEngineSettings() {
   const [aiState, setAiState] = useState(getLocalAiState());
   const [warming, setWarming] = useState(false);
   /** 用户选择的模型 id（决定下载哪个模型） */
-  const [modelId, setModelId] = useState(DEFAULT_LOCAL_MODEL);
+  // 初始值取用户上次选中的模型（持久化），而不是硬编码的默认模型 ——
+  // 否则刷新页面后选择会跳回默认项，与 AI 对话实际使用的模型对不上。
+  const [modelId, setModelId] = useState(readSelectedModel());
   /** 用户选择的下载源 */
   const [sourceId, setSourceId] = useState<ModelSourceId>(readModelSource());
   /** 推理运行时偏好（自动 / 强制 WebGPU / 强制 WASM） */
@@ -311,7 +314,11 @@ function AiEngineSettings() {
           <div className="flex flex-col gap-1.5">
             {LOCAL_MODEL_OPTIONS.map((m) => {
               const active = modelId === m.id;
-              const loaded = aiState.modelId === m.id && aiState.status === 'ready';
+              // 「运行中」= 该模型确实是当前加载着的那个。
+              // 判定必须同时看 status 与 modelId —— 只看 modelId 会在
+              // 卸载后残留（卸载把 modelId 复位成默认模型，第一个就会误亮）。
+              const loaded =
+                aiState.status === 'ready' && aiState.modelId === m.id;
               const dl = downloadStates[m.id];
               const downloaded = dl?.downloaded === true;
               const isDownloading = downloadingId === m.id;
@@ -331,6 +338,9 @@ function AiEngineSettings() {
                       type="button"
                       onClick={() => {
                         setModelId(m.id);
+                        // 记下用户选中的模型 —— AI 对话等无参调用 loadLocalModel()
+                        // 的路径要靠它才知道该用哪个模型。
+                        saveSelectedModel(m.id);
                         if (loaded) {
                           notify('该模型已在运行中', 'info');
                         } else if (downloaded) {

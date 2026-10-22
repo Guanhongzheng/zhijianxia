@@ -387,6 +387,30 @@ async function req(path, { method = 'GET', body, token } = {}) {
     'unload 已await 在途加载并释放 session'
   );
 
+  // ---------- 无参 loadLocalModel 必须用「用户选中的模型」 ----------
+  //
+  // AI 对话（localChatStream）、调度器、预热都是**无参**调用 loadLocalModel()。
+  // 若无参时回落到硬编码的默认模型，就会出现：
+  //   用户在设置里加载了 1.5B → 打开 AI 对话 → 它偷偷去加载 0.5B
+  // 而 0.5B 往往没下载过 → 现场下几百 MB，甚至直接加载失败
+  //（实测报「WASM 推理后端初始化失败（未包装的错误值）」）。
+  //
+  // 同时要求卸载后 modelId 被**清空**而非复位成默认模型 ——
+  // 复位会让「运行中」徽标错挂到默认模型（列表第一项）头上。
+  const panelSrc2 = readFileSync(
+    new URL('../src/components/cards/settings-panel.tsx', import.meta.url),
+    'utf8',
+  );
+  check(
+    /readSelectedModel/.test(engineSrc) &&
+      /saveSelectedModel/.test(engineSrc) &&
+      /modelId:\s*string\s*=\s*readSelectedModel\(\)/.test(engineSrc) &&
+      /saveSelectedModel\(m\.id\)/.test(panelSrc2) &&
+      /modelId:\s*''/.test(engineSrc),
+    '无参 loadLocalModel 使用用户选中的模型，且卸载后清空 modelId（避免「运行中」标记错位）',
+    '选中模型已持久化，卸载会清空 modelId'
+  );
+
   // 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session。
   // 必须在加载模型前做冒烟测试，否则会在下载完权重后才炸出裸数字。
   //
