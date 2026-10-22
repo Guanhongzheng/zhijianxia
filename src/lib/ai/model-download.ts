@@ -13,7 +13,7 @@
  * 只查「必要文件」而非「任意文件」，否则下载了一半的模型会被误判成已下载。
  */
 
-import { LOCAL_MODEL_OPTIONS, type LocalModelOption } from './local-models';
+import { LOCAL_MODEL_OPTIONS, modelWeightFile, type LocalModelOption } from './local-models';
 import { listCachedFiles } from './model-cache';
 
 /** Transformers.js 的浏览器缓存名 */
@@ -24,13 +24,13 @@ const CACHE_NAME = 'transformers-cache';
  *
  * 只列决定性文件：ONNX 权重 + 分词器 + 配置。
  * 少了任何一个都跑不起来，所以全部命中才算「已下载」。
+ *
+ * ⚠️ 权重文件名**随模型而变** —— 大模型在 WASM 下只能用 uint8，
+ * 那个文件是 `onnx/model_uint8.onnx`，不是 `model_q4.onnx`。
+ * 判定必须跟着模型走，否则会出现「显示已下载、加载时却要重新下」的情况。
  */
-const REQUIRED_FILES: Record<string, string[]> = {
-  // 量化权重文件名随 dtype 变化，取所有可能的候选
-  onnx: ['onnx/model_q4.onnx', 'onnx/model_q4f16.onnx', 'onnx/model_fp16.onnx', 'onnx/model.onnx'],
-  tokenizer: ['tokenizer.json', 'tokenizer_config.json'],
-  config: ['config.json', 'generation_config.json'],
-};
+const TOKENIZER_FILES = ['tokenizer.json', 'tokenizer_config.json'];
+const CONFIG_FILES = ['config.json', 'generation_config.json'];
 
 /** 单个模型的下载状态 */
 export interface ModelDownloadState {
@@ -99,14 +99,11 @@ export async function isModelDownloaded(
   const hasFile = (file: string) =>
     urls.some((k) => k.includes(`${opt.id}/`) && k.endsWith(`/${file}`));
 
-  // onnx 有 4 个候选精度文件，实际只需要其中 1 个，
-  // 因此按「候选组」判定：任一候选命中即算该组满足。
-  const groupOk = (group: string[]) => group.some(hasFile);
-
+  // 三组必需文件：权重（**按模型实际精度档**）、分词器、配置
   const metGroups = [
-    groupOk(REQUIRED_FILES.onnx),
-    groupOk(REQUIRED_FILES.tokenizer),
-    groupOk(REQUIRED_FILES.config),
+    hasFile(modelWeightFile(opt)),
+    TOKENIZER_FILES.some(hasFile),
+    CONFIG_FILES.some(hasFile),
   ].filter(Boolean).length;
 
   return {

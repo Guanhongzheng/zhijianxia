@@ -394,11 +394,45 @@ async function req(path, { method = 'GET', body, token } = {}) {
   // 否则用户要白等几分钟把 1.7GB 下载完才发现 WebGPU 装不下。
   check(
     /smokeTestWebGpu/.test(rtSrc2) &&
-      /resolveRuntime\(\s*undefined,\s*false,\s*true\s*,\s*modelOption\?\.q4Bytes\s*\)/.test(
+      /resolveRuntime\(\s*undefined,\s*false,\s*true,\s*modelOption\?\.q4Bytes,\s*\/\/[^\n]*\n\s*modelWeightDtype\(modelOption\),?\s*\)/.test(
         engineSrc,
       ),
-    '加载模型前执行 WebGPU 冒烟测试（deep=true），并传入模型体积用于 WebGPU 可行性判定',
-    '冒烟测试已接入加载流程，且带上了模型体积'
+    '加载模型前执行 WebGPU 冒烟测试（deep=true），并传入模型体积与精度档',
+    '冒烟测试已接入加载流程，且带上了模型体积与精度档'
+  );
+
+  // ---------- 大模型在 WASM 下必须换精度档 ----------
+  //
+  // 实测（Qwen2.5-1.5B，WASM 后端，同一台机器同一份代码）：
+  //   q4f16 (1.22 GB) → ❌ Aborted()（wasm 后端缺 fp16 算子支持）
+  //   uint8 (1.58 GB) → ✅ 319s 加载成功
+  //   q4    (1.78 GB) → ❌ 裸数字（内存分配失败）
+  // 注意该模型里 uint8 反而比 q4 更小。
+  //
+  // 精度必须**跟着模型走**：下载的权重文件与加载用的 dtype 必须是同一个，
+  // 否则会出现「显示已下载、加载时却要重新下载」。
+  const modelsSrc2 = readFileSync(
+    new URL('../src/lib/ai/local-models.ts', import.meta.url),
+    'utf8',
+  );
+  const dlrSrc2 = readFileSync(
+    new URL('../src/lib/ai/model-downloader.ts', import.meta.url),
+    'utf8',
+  );
+  const dlSrc2 = readFileSync(
+    new URL('../src/lib/ai/model-download.ts', import.meta.url),
+    'utf8',
+  );
+  check(
+    /weightDtype/.test(modelsSrc2) &&
+      /modelWeightDtype/.test(modelsSrc2) &&
+      /modelWeightFile/.test(modelsSrc2) &&
+      /modelWeightDtype\(modelOption\)/.test(engineSrc) &&
+      /modelWeightFile\(model\)/.test(dlrSrc2) &&
+      /modelWeightFile\(opt\)/.test(dlSrc2) &&
+      /'uint8'/.test(rtSrc2),
+    '大模型在 WASM 下改用 uint8 精度档，且下载与加载使用同一个权重文件',
+    '模型级精度档已就位'
   );
 
   // ---------- WebGPU 大模型：按权重体积提前拦截 ----------

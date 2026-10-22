@@ -11,6 +11,7 @@ import {
   findModelOption,
   findModelSource,
   inferFamily,
+  modelWeightDtype,
   MODEL_SOURCES,
   type ModelFamily,
   type ModelSourceId,
@@ -134,8 +135,11 @@ export function isLocalAiReady(): boolean {
  * 可能是 `{ status, statusText }` 这样的普通对象，也可能是字符串。
  * 这里逐类展开，并在只剩一个无法解释的数字时明确说明，
  * 避免用户看到「1888206176」这种彻底无从下手的报错。
+ *
+ * @param device 本次实际使用的推理后端。**必须传**——
+ *   裸数字在 WebGPU 与 WASM 下的成因完全不同，文案不能混用。
  */
-function describeNonError(err: unknown): string {
+function describeNonError(err: unknown, device?: RuntimeDevice): string {
   if (err === null) return '本地模型加载失败（错误原因为 null）';
   if (err === undefined) return '本地模型加载失败（错误原因为 undefined）';
 
@@ -144,18 +148,38 @@ function describeNonError(err: unknown): string {
   }
 
   if (typeof err === 'number') {
-    // ONNX Runtime 的 WebGPU 执行后端（JSEP）初始化失败时抛出的就是这个 ——
-    // 一个 wasm 侧的未初始化内存值，而不是 Error实例。
     //
-    // ⚠️ 这里曾经把原因归到「显卡驱动 / 远程桌面 / GPU 独占」，是**误判**。
-    // 实测（NVIDIA Lovelace、shader-f16 可用、适配器与device 均正常）：
-    // 同一个 493MB 权重用 wasm 后端 38 秒加载成功，用 WebGPU 后端必抛裸数字；
-    // 而把精度从 q4f16 换成 q4 后，**WebGPU 也能正常加载**。
-    // 也就是说问题出在 WebGPU 执行后端本身（与q4f16 这条精度路径的兼容性），
-    // 不是用户的硬件或驱动。
+    // ORT 抛出的裸数字其实是 **wasm 堆上的指针**（错误消息字符串的地址），
+    // 不是状态码 —— 所有观测到的值低字节都是 16 的倍数（0x38/0x60/0xa0），
+    // 即 16 字节对齐。JS 侧拿不到 Error 对象，于是只剩一个数字。
     //
-    // 现在 runtime.ts 已让 WebGPU 默认走 q4，正常不会再走到这里；
-    // 保留这段文案是为了覆盖「显式选择 q4f16 后仍失败」等残余情况。
+    // 不同后端的成因不同，文案必须分开说：
+    //
+    // **WebGPU**：ORT 的 JSEP 后端建 session 失败。实测（NVIDIA Lovelace、
+    //   shader-f16 可用、适配器与 device 均正常）同一份权重用 wasm 后端能加载，
+    //   用 WebGPU 后端必抛裸数字。已定位到两个独立成因：
+    //   1) 精度路径不兼容（q4f16 在 WebGPU EP 上必失败）；
+    //   2) 权重超过 GPU 单缓冲上限（本机 maxBufferSize = 2 GiB，
+    //      而 WebGPU EP 把整个权重塞进单个 buffer，不分块）。
+    //   应用层已按体积提前拦截（见 runtime.ts），正常不会走到这里。
+    //
+    // **WASM**：实测与**权重体积**强相关 —— 同一台机器同一份代码：
+    //   Qwen2.5-0.5B  q4     (749 MB) → ✅ 115s
+    //   Qwen2.5-1.5B  uint8  (1.58 GB) → ✅ 319s
+    //   Qwen2.5-1.5B  q4     (1.78 GB) → ❌ 裸数字
+    // 失败点在 session 初始化的内存分配阶段（ORT 日志停在图优化之后，
+    // 没有任何 [E:] 错误行）。JS 侧单个 ArrayBuffer 的分配上限是 2 GB
+    // （实测 1.9 GB 可分配、2 GB 报 "Array buffer allocation failed"），
+    // 而权重要被读成**一整块连续 buffer** 才能交给 ORT。
+    // 因此 WASM 下大模型要改用体积更小的精度档（见 runtime.ts）。
+    if (device === 'wasm') {
+      return (
+        `WASM 推理后端初始化失败（底层抛出未包装的错误值 ${err}）。` +
+        `这通常是**权重体积过大**导致内存分配失败 —— ` +
+        `该模型在 WASM 下也放不进一块连续内存缓冲区。` +
+        `请改用体积更小的模型，或在「设置 · AI 引擎」换用其他模型后重试`
+      );
+    }
     return (
       `WebGPU 推理后端初始化失败（底层抛出未包装的错误值 ${err}）。` +
       `这通常是 ONNX Runtime 的 WebGPU 后端与该模型精度的兼容问题，` +
@@ -207,10 +231,13 @@ function describeNonError(err: unknown): string {
  * 而是裸数字或裸对象（曾观测到 `throw 1888206176`）。
  * 旧实现对非 Error 一律返回「本地模型加载失败」，把所有线索丢光，
  * 界面上只剩一个无法理解的报错。这里必须把非Error 也如实展开。
+ *
+ * @param device 本次实际使用的推理后端 —— 裸数字在 WebGPU / WASM 下
+ *   成因不同，文案必须区分（历史上出现过「用的是 WASM 却提示改用 WASM」）。
  */
-export function describeError(err: unknown): string {
+export function describeError(err: unknown, device?: RuntimeDevice): string {
   if (!(err instanceof Error)) {
-    return describeNonError(err);
+    return describeNonError(err, device);
   }
 
   const parts: string[] = [err.message];
@@ -496,7 +523,14 @@ export async function loadLocalModel(
   // 此时直接改走 WASM，别让用户白等几分钟下载完才发现加载不了。
   // 详见 runtime.ts 里「大模型在 WebGPU 上加载失败」的实测结论。
   const modelOption = findModelOption(modelId);
-  let runtime = await resolveRuntime(undefined, false, true, modelOption?.q4Bytes);
+  let runtime = await resolveRuntime(
+    undefined,
+    false,
+    true,
+    modelOption?.q4Bytes,
+    // WASM 下要用模型自己的精度档 —— 大模型只有 uint8 装得下
+    modelWeightDtype(modelOption),
+  );
 
   emit({
     status: 'loading',
@@ -507,10 +541,18 @@ export async function loadLocalModel(
     error: undefined,
   });
 
+  /**
+   * 最近一次尝试的运行时 —— 用于在失败时给出**正确后端**的错误文案。
+   * 裸数字错误在 WebGPU 与 WASM 下成因不同，文案不能混用。
+   */
+  let lastRuntime: RuntimeInfo | undefined;
+
   const attempt = async (
     source: ModelSourceOption,
     rt: RuntimeInfo,
   ) => {
+    // 记录最近一次尝试的运行时 —— 失败后要据此给出**正确后端**的错误文案。
+    lastRuntime = rt;
     const { pipeline, env } = await import('@huggingface/transformers');
 
     // 允许跨域加载模型资源
@@ -632,7 +674,7 @@ export async function loadLocalModel(
           // 直接 console.error(err) 控制台里只会显示一个无从下手的数值
           console.error(
             `[zj-ai] 模型加载失败（源：${source.name} / 运行时：${rt.device} / 精度：${rt.dtype}）：`,
-            describeError(err),
+            describeError(err, rt.device),
             err,
           );
           // 只在错误确实与缓存/网络相关时才清 ——
@@ -648,7 +690,9 @@ export async function loadLocalModel(
     console.error('[zj-ai] 本地模型加载失败:', lastError);
     emit({
       status: 'error',
-      error: describeError(lastError),
+      // 用最后一次尝试的运行时来描述 —— 降级阶梯可能换过后端，
+      // 用错后端会给出误导性的建议（例如「你在用 WASM 却让你改用 WASM」）。
+      error: describeError(lastError, lastRuntime?.device),
     });
     pipelinePromise = null;
     throw lastError;

@@ -27,7 +27,7 @@ export interface LocalModelOption {
    * ⚠️ 必须是**实际值**而非估算 —— 下面这个阈值判断是精确的分界线：
    * GPU 的 `maxBufferSize` 是 2 GiB，而 ORT 的 WebGPU EP 会把整个权重
    * 分配成**单个** GPU buffer（不分块），所以权重 + 激活/工作区
-   * 一旦越过 2 GiB 就会分配失败，表现为 wasm 侧 abort（一个裸指针数字）。
+   * 一旦越过 2 GiB 就会分配失败，表现为 wasm侧 abort（一个裸指针数字）。
    *
    * 实测（NVIDIA Lovelace / RTX 40 系，maxBufferSize = 2147483648）：
    *   onnx-community/Qwen2.5-0.5B-Instruct  q4 = 786156820 (749 MB) → ✅ 成功
@@ -38,6 +38,28 @@ export interface LocalModelOption {
    * 超过则直接引导到 WASM，避免用户白等几分钟下载完才发现加载不了。
    */
   q4Bytes?: number;
+  /**
+   * 本模型实际使用的权重精度档。
+   *
+   * 绝大多数模型用 `q4`。但**大模型是个例外**：
+   * Qwen2.5-1.5B 的 q4 权重是 1.78 GB，在 WASM 后端下装不下 ——
+   * 实测（同一台机器、同一份代码）：
+   *   q4f16 (1.22 GB) → ❌ Aborted()（wasm 后端缺 fp16 算子支持）
+   *   uint8 (1.58 GB) → ✅ 319s 加载成功
+   *   q4    (1.78 GB) → ❌ 裸数字（内存分配失败）
+   *
+   * 注意这个模型里 **uint8 反而比 q4 更小**（1.58 GB < 1.78 GB），
+   * 因为它的 q4 是分块 int4 量化、带 fp32 scale，额外开销不小。
+   *
+   * 固定到模型级还有一个好处：**下载与加载用的是同一个文件**，
+   * 不会出现「下了 q4、加载时却要 uint8」的白下载。
+   */
+  weightDtype?: 'q4' | 'uint8';
+  /**
+   * 权重文件在仓库里的路径 —— 必须与 `weightDtype` 对应。
+   * 不写则默认 `onnx/model_q4.onnx`。
+   */
+  weightFile?: string;
   /** 简介 */
   desc: string;
   /** 聊天模板族 */
@@ -117,12 +139,33 @@ export const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
     id: 'onnx-community/Qwen2.5-1.5B-Instruct',
     name: 'Qwen2.5 1.5B Instruct',
     size: '1.5B',
-    approxSize: '约 1 GB',
+    approxSize: '约 1.5 GB',
     q4Bytes: 1787566590,
-    desc: '同代中更大参数，写作与长文本质量更好，需较多内存；权重超出 GPU 缓冲上限，仅支持 WASM 推理',
+    // ⚠️ 只能用 uint8：q4 权重 1.78 GB 在 WASM 后端下内存分配失败，
+    // 而这个模型的 uint8（1.58 GB）反而比 q4 更小且能正常加载。
+    // 详见 LocalModelOption.weightDtype 的实测记录。
+    weightDtype: 'uint8',
+    weightFile: 'onnx/model_uint8.onnx',
+    desc: '同代中更大参数，写作与长文本质量更好，需较多内存；权重较大，仅支持 WASM 推理',
     family: 'qwen',
   },
 ];
+
+/**
+ * 取某个模型实际使用的权重精度。
+ * 未声明时默认 `q4`。
+ */
+export function modelWeightDtype(m: LocalModelOption | undefined): 'q4' | 'uint8' {
+  return m?.weightDtype ?? 'q4';
+}
+
+/**
+ * 取某个模型实际使用的权重文件路径（仓库内相对路径）。
+ * 未声明时默认 `onnx/model_q4.onnx`。
+ */
+export function modelWeightFile(m: LocalModelOption | undefined): string {
+  return m?.weightFile ?? 'onnx/model_q4.onnx';
+}
 
 /** 按 id 查找模型项 */
 export function findModelOption(id: string): LocalModelOption | undefined {

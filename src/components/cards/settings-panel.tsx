@@ -59,7 +59,12 @@ import {
   downloadModel,
   type DownloadProgress,
 } from '@/lib/ai/model-downloader';
-import { canUseWebGpu, findModelOption, WEBGPU_MAX_Q4_BYTES } from '@/lib/ai/local-models';
+import {
+  canUseWebGpu,
+  findModelOption,
+  modelWeightDtype,
+  WEBGPU_MAX_Q4_BYTES,
+} from '@/lib/ai/local-models';
 import { ProfileSettings } from '@/components/cards/profile-settings';
 import { PersonalizationSettings } from '@/components/cards/personalization-settings';
 import { ApiCapabilitySettings } from '@/components/cards/api-capability-settings';
@@ -465,7 +470,14 @@ function AiEngineSettings() {
                 </Badge>
                 {activeRuntime && (
                   <span className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
-                    {activeRuntime.dtype.toUpperCase()}
+                    {/* 精度随所选模型变化 —— 大模型在 WASM 下用的是 uint8，
+                        而 WebGPU 一律 q4。直接展示运行时的值会不准，
+                        这里按「当前设备的实际取值」显示。 */}
+                    {(
+                      shownDevice === 'webgpu'
+                        ? 'q4'
+                        : modelWeightDtype(findModelOption(modelId))
+                    ).toUpperCase()}
                   </span>
                 )}
               </div>

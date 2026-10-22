@@ -24,7 +24,7 @@
  * 详见 model-cache.ts。
  */
 
-import { findModelSource, type LocalModelOption } from './local-models';
+import { findModelSource, modelWeightFile, type LocalModelOption } from './local-models';
 import { invalidateDownloadState } from './model-download';
 import { getCachedFileSize, modelCache } from './model-cache';
 
@@ -32,23 +32,30 @@ import { getCachedFileSize, modelCache } from './model-cache';
 const CACHE_NAME = 'transformers-cache';
 
 /**
- * 下载所需的文件。
+ * 下载所需的文件（除权重外）。
  *
  * ⚠️ 顺序有意义：**小文件在前**。
  * 权重动辄几百 MB～1.7GB，把它排在最后，一旦中途失败，
  * 前面的小文件已经落进缓存，重试时不必重下；
  * 排在最前则失败后什么都没留下。
  *
- * onnx 权重只取 `model_q4.onnx` —— 应用固定用 q4 精度（见 runtime.ts），
- * 其它精度的权重文件不需要下载。
+ * 权重文件本身由**模型**决定（见 `modelWeightFile`）——
+ * 大模型在 WASM 下只能用 uint8，而那个模型里 uint8 反而比 q4 更小。
  */
 const REQUIRED_FILES = [
   'config.json',
   'generation_config.json',
   'tokenizer.json',
   'tokenizer_config.json',
-  'onnx/model_q4.onnx',
 ];
+
+/**
+ * 拼出某个模型要下载的完整文件清单。
+ * 权重文件按模型的实际精度档取，保证「下载的」与「加载的」是同一个文件。
+ */
+export function requiredFilesFor(model: LocalModelOption): string[] {
+  return [...REQUIRED_FILES, modelWeightFile(model)];
+}
 
 /** 下载进度 */
 export interface DownloadProgress {
@@ -163,7 +170,7 @@ export async function downloadModel(
   // 先探明各文件大小，用于算总体进度。
   // 并发探测 —— 每个只是 1 字节的 Range 请求，很快。
   const plan: { filename: string; url: string; size: number }[] = await Promise.all(
-    REQUIRED_FILES.map(async (filename) => {
+    requiredFilesFor(model).map(async (filename) => {
       const url = buildUrl(model.id, filename, sourceId);
       return { filename, url, size: await probeFileSize(url, signal) };
     }),

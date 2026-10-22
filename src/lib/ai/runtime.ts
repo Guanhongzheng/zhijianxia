@@ -53,7 +53,7 @@ export type RuntimeDevice = 'webgpu' | 'wasm';
  * ⚠️ 另外不要在 WebGPU 上用 `fp16`：那会加载完整半精度权重（体积数倍于 q4），
  * 且部分算子在 WebGPU EP 上不受支持。
  */
-export type RuntimeDtype = 'q4f16' | 'q4';
+export type RuntimeDtype = 'q4f16' | 'q4' | 'uint8';
 
 /**
  * ⚠️ 关于**大模型在 WebGPU 上加载失败**（实测结论）
@@ -133,8 +133,8 @@ export function saveRuntimePref(pref: RuntimePref) {
 
 /** 探测结果缓存 —— WebGPU 能力在页面生命周期内不会变，无需反复问 GPU */
 let cached: RuntimeInfo | null = null;
-/** 缓存对应的模型体积（字节）—— 0 表示「与体积无关的通用探测」 */
-let cachedKey = -1;
+/** 缓存对应的 key —— 形如 `<体积>:<精度档>` */
+let cachedKey = '';
 
 /** 探测 WebGPU 能力（不含偏好决策） */
 async function probeWebGpu(): Promise<{
@@ -310,14 +310,22 @@ export async function resolveRuntime(
   deep = false,
   /** 待加载模型的 q4 权重字节数 —— 用于判断能否走 WebGPU（见上方实测结论） */
   modelQ4Bytes?: number,
+  /**
+   * 待加载模型在 WASM 下使用的精度档。
+   *
+   * 大模型在 WASM 下**只有 uint8 装得下**（q4 权重 1.78 GB 会内存分配失败），
+   * 所以精度必须跟着模型走，不能一律 q4。
+   */
+  modelDtype: RuntimeDtype = 'q4',
 ): Promise<RuntimeInfo> {
-  // ⚠️ 缓存必须把「模型体积」也纳入key。
+  // ⚠️ 缓存必须把「模型体积」与「精度档」都纳入 key。
   //
-  // 探测结果（有没有 GPU、能不能建device）与模型无关，但「这个模型能不能走
-  // WebGPU」与体积强相关。若缓存只按 pref 命中，就会出现：
-  //   先加载 0.5B（缓存 = webgpu）→ 再加载 1.5B → 直接复用旧缓存，
-  //   于是又去 WebGPU 上撞 2 GiB 缓冲上限。
-  const cacheKey = modelQ4Bytes ?? 0;
+  // 探测结果（有没有 GPU、能不能建 device）与模型无关，但「这个模型能不能走
+  // WebGPU」与体积强相关、「用哪个精度」又与模型绑定。若缓存只按 pref 命中，
+  // 就会出现：
+  //   先加载 0.5B（缓存 = webgpu + q4）→ 再加载 1.5B → 直接复用旧缓存，
+  //   于是又去 WebGPU 上撞 2 GiB 缓冲上限，且精度档也用错。
+  const cacheKey = `${modelQ4Bytes ?? 0}:${modelDtype}`;
   if (cached && !force && pref === undefined && cachedKey === cacheKey) {
     return cached;
   }
@@ -362,7 +370,9 @@ export async function resolveRuntime(
       dtype = 'q4';
     } else {
       device = 'wasm';
-      dtype = 'q4';
+      // 回退到 WASM 时要用**模型自己的**精度档 ——
+      // 大模型在 WASM 下只有 uint8 能装下（q4 权重内存分配失败）。
+      dtype = modelDtype;
       fallbackReason = sizeBlocked
         ? `该模型${smokeReason}，已自动改用 WASM 推理（CPU，速度较慢但稳定）`
         : probe.hasWebGpuApi
@@ -371,11 +381,11 @@ export async function resolveRuntime(
     }
   } else if (effectivePref === 'wasm') {
     device = 'wasm';
-    dtype = 'q4';
+    dtype = modelDtype;
   } else {
     // auto：能用就用，WebGPU 通常比 WASM 快一个数量级
     device = webgpuUsable ? 'webgpu' : 'wasm';
-    dtype = 'q4';
+    dtype = webgpuUsable ? 'q4' : modelDtype;
     if (!webgpuUsable && smokeReason) {
       fallbackReason = sizeBlocked
         ? `该模型${smokeReason}，已自动改用 WASM 推理`
@@ -407,5 +417,5 @@ export function peekRuntime(): RuntimeInfo | undefined {
 /** 清除缓存（测试用） */
 export function __resetRuntimeCache() {
   cached = null;
-  cachedKey = -1;
+  cachedKey = '';
 }
