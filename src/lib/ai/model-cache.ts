@@ -109,9 +109,15 @@ function decodeEntryKey(entryUrl: string): string | null {
 
 /** 打开底层缓存 */
 async function openCache(): Promise<Cache | null> {
-  if (typeof window === 'undefined' || !('caches' in window)) return null;
+  // ⚠️ 用 globalThis 而不是 window ——
+  // 这个模块会在 **Web Worker** 里用（推理已搬到 Worker），
+  // 而 Worker 里**没有 window**，只有 self/globalThis。
+  // 之前用 window 做环境判断，会让 Worker 里的缓存直接失效
+  //（表现为 Worker 内报 "window is not defined"、权重写不进缓存）。
+  const scope = globalThis as unknown as { caches?: CacheStorage };
+  if (!scope.caches || typeof scope.caches.open !== 'function') return null;
   try {
-    return await window.caches.open(CACHE_NAME);
+    return await scope.caches.open(CACHE_NAME);
   } catch {
     return null;
   }
@@ -281,6 +287,25 @@ export async function getCachedFileSize(url: string): Promise<number> {
 /** 列出已缓存的所有逻辑文件 URL */
 export async function listCachedFiles(): Promise<string[]> {
   return modelCache.keys();
+}
+
+/**
+ * 删除某个模型的全部缓存文件（含分片与元信息）。
+ *
+ * 供「错误与缓存相关时清一次重试」使用 —— 主线程与 Worker 都要能调。
+ *
+ * @param modelId 只删该模型的文件；不传则删全部
+ * @returns 实际删除的逻辑文件数
+ */
+export async function deleteModelFiles(modelId?: string): Promise<number> {
+  const cache = await openCache();
+  if (!cache) return 0;
+  const urls = await modelCache.keys();
+  const targets = modelId ? urls.filter((u) => u.includes(modelId)) : urls;
+  for (const u of targets) {
+    await modelCache.delete(u);
+  }
+  return targets.length;
 }
 
 /** 删除所有模型缓存（用于「清缓存」） */

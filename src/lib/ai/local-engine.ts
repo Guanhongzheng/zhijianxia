@@ -3,8 +3,8 @@
  * 所有推理在用户设备本地完成，提示词不上传，隐私优先。
  */
 
-import type { TextGenerationPipeline } from '@huggingface/transformers';
-import { modelCache, clearModelCache, listCachedFiles } from './model-cache';
+import { modelCache, clearModelCache, deleteModelFiles, listCachedFiles } from './model-cache';
+import { generateInWorker, loadInWorker, unloadInWorker } from './ai-client';
 import {
   DEFAULT_LOCAL_MODEL,
   DEFAULT_MODEL_SOURCE,
@@ -22,6 +22,7 @@ import {
   resolveRuntime,
   saveRuntimePref,
   type RuntimeDevice,
+  type RuntimeDtype,
   type RuntimeInfo,
   type RuntimePref,
 } from './runtime';
@@ -42,6 +43,7 @@ export {
 } from './runtime';
 export type { RuntimeDevice, RuntimeDtype, RuntimeInfo, RuntimePref } from './runtime';
 export { modelCache, clearModelCache, isFileCached, listCachedFiles } from './model-cache';
+export { isCacheRelatedError } from './cache-errors';
 
 export type LocalAiStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -69,10 +71,8 @@ export interface ChatMessage {
 }
 
 /** 引擎单例 —— 保证同一页面只加载一次模型 */
-let pipelinePromise: Promise<TextGenerationPipeline> | null = null;
+let pipelinePromise: Promise<void> | null = null;
 let loadedModelId = '';
-/** 已建立的 pipeline 实例 —— 卸载时需要显式释放其底层 ORT session */
-let activePipeline: TextGenerationPipeline | null = null;
 let state: LocalAiState = {
   status: 'idle',
   progress: 0,
@@ -358,41 +358,6 @@ const CDN_WASM_DIR =
 let localWasmChecked: boolean | null = null;
 
 /**
- * ORT 在建session 时会固定抛出两条 C++ 侧日志：
- *   `... [W:onnxruntime:, session_state.cc:1280 VerifyEachNodeIsAssignedToAnEp]
- *    Some nodes were not assigned to the preferred execution providers...`
- *   `... [W:onnxruntime:, session_state.cc:1282 VerifyEachNodeIsAssignedToAnEp] Rerun...`
- *
- * 这是**正常行为** —— ORT 有意把 shape 类算子留在 CPU 以优化性能。
- *
- *⚠️ 为什么不能用 `env.backends.onnx.logLevel = 'error'` 消掉：
- * ORT 有两套日志通道：
- *   1. JS 侧 logger（`[W,<ISO 时间>]` 格式）—— 受 `logLevel` 控制；
- *   2. C++/wasm 侧原生 logger（`<时间戳> [W:onnxruntime:, file:line函数]` 格式）
- *      —— 经 emscripten 的 `console.error` 直出，**完全绕过 `logLevel`**。
- * 上面这条属于第2 类，所以调 logLevel 无效（已实测确认）。
- *
- * 因此只能在 console 出口做过滤。过滤条件写得极窄：
- * 只认 `VerifyEachNodeIsAssignedToAnEp` 这一个 ORT 内部函数名，
- * 且必须是 console.error —— 真正的失败（含同为error 级的其它 ORT 报错）
- * 都不含这个标识，不会被吞掉。
- */
-const ORT_BENIGN_LOG = /VerifyEachNodeIsAssignedToAnEp/;
-
-let ortLogFilterInstalled = false;
-
-function installOrtLogFilter(): void {
-  if (ortLogFilterInstalled || typeof window === 'undefined') return;
-  const original = window.console.error.bind(window.console);
-  window.console.error = (...args: unknown[]) => {
-    const first = args[0];
-    if (typeof first === 'string' && ORT_BENIGN_LOG.test(first)) return;
-    original(...args);
-  };
-  ortLogFilterInstalled = true;
-}
-
-/**
  * 探测本地 public/ort/ 下的 wasm 是否存在。
  *
  * 存在则走同源本地加载（推荐，完全不依赖 CDN）；
@@ -421,91 +386,6 @@ async function hasLocalWasm(): Promise<boolean> {
 }
 
 /**
- * 把 ONNX Runtime 的 wasm 资源指向本地 public/ort/。
- *
- * 背景：Transformers.js 在模块初始化时会把
- * `onnxruntime-web` 的 wasmPaths 设成 `https://cdn.jsdelivr.net/npm/@huggingface/transformers@<ver>/dist/`。
- * 该域名在国内网络下经常TLS 握手失败，浏览器侧表现为：
- *   `no available backend found. ERR: [wasm] TypeError: Failed to fetch`
- * 进而导致模型永远加载不出来（用户看到的「模型加载失败 · Failed to fetch」）。
- *
- * 这里改写 wasmPaths 指向同源的 public/ort/，
- * 由 `scripts/copy-ort-wasm.mjs` 从 node_modules 复制所需文件，彻底摆脱 CDN 依赖。
- *
- * 注意：Transformers.js 会在 import 时就把 wasmPaths 写死，
- * 所以本函数必须在 `await import('@huggingface/transformers')` **之后**、
- * `pipeline()` 之前调用（此时 onnxruntime 的 env 仍可改写，
- * 且 wasmPaths 只在 initWasm() 真正初始化时才被读取）。
- *
- * @param device 本次推理设备。**关键**：只有 wasm 后端才需要加载 wasm 文件，
- *                走 WebGPU 时wasm 仅作为 JSEP 的宿主胶水，仍需加载，
- *                但 numThreads 设置对 GPU 路径无意义。
- */
-async function applyLocalWasm(
-  env: {
-    /**
-     * Transformers.js 把 ONNX Runtime 的 env 挂在 `backends.onnx` 下，
-     * 类型是 `Partial<onnxruntime-common.Env>`（见 types/env.d.ts）。
-     */
-    backends?: { onnx?: Record<string, unknown> };
-    /** ORT 日志级别，注意它挂在 backends.onnx 上而非顶层 */
-    logLevel?: unknown;
-  },
-  device: RuntimeDevice,
-) {
-  // 取 ORT 的 env 对象。⚠️ 不是顶层 env —— wasm / logLevel / webgpu 等
-  // 全部挂在 backends.onnx 下（Transformers.js 的转接层）。
-  const ortEnv = env.backends?.onnx;
-  if (!ortEnv) {
-    console.warn('[zj-ai] 未取到 ONNX Runtime 的 env（env.backends.onnx 为空），wasm 本地化未生效');
-    return;
-  }
-  const wasm = ortEnv.wasm as
-    | {
-        wasmPaths?: unknown;
-        numThreads?: unknown;
-        proxy?: unknown;
-      }
-    | undefined;
-  if (!wasm) {
-    console.warn('[zj-ai] 未取到 ORT 的 wasm 配置对象（env.backends.onnx.wasm 为空），wasm 本地化未生效');
-    return;
-  }
-
-  // 压低 JS 侧日志级别（ORT 自有 logger 的格式是 `[W,<ISO时间>]`）。
-  // 注意：这**管不到**C++ 侧的 VerifyEachNodeIsAssignedToAnEp 警告，
-  // 那一类要靠下面的 installOrtLogFilter。
-  ortEnv.logLevel = 'error';
-
-  installOrtLogFilter();
-
-  const useLocal = await hasLocalWasm();
-  const dir = useLocal ? LOCAL_WASM_DIR : CDN_WASM_DIR;
-
-  // 用官方支持的对象形式分别指定 .wasm 与 .mjs。
-  // 只给字符串前缀也能工作，但对象形式不依赖「文件名拼接规则」，
-  // 在 ORT 升级改名时更稳（实测默认会走 CDN，必须显式覆盖两个文件）。
-  wasm.wasmPaths = {
-    wasm: `${dir}ort-wasm-simd-threaded.jsep.wasm`,
-    mjs: `${dir}ort-wasm-simd-threaded.jsep.mjs`,
-  };
-
-  // 单线程更稳：多线程需要 SharedArrayBuffer，
-  // 未开启跨域隔离（COOP/COEP）的环境下会直接失败。
-  // WebGPU 路径同样设为 1 —— 那里 wasm 只做 JSEP 胶水，多线程无收益。
-  wasm.numThreads = 1;
-  // 不经 Worker 代理：避免多一次跳转带来的延迟
-  wasm.proxy = false;
-
-  if (!useLocal) {
-    console.warn(
-      '[zj-ai] 本地 wasm 未找到，已回退到 CDN（该 CDN 在国内可能不可达）。' +
-        '请执行 `npm run postinstall` 或 `npm run build` 生成 public/ort/。',
-    );
-  }
-}
-
-/**
  * 加载本地模型。重复调用会复用同一个 Promise。
  * 加载期间会持续推送进度，用于渲染骨架屏。
  *
@@ -530,18 +410,16 @@ export async function loadLocalModel(
    */
   modelId: string = readSelectedModel(),
   onProgress?: (ratio: number) => void,
-): Promise<TextGenerationPipeline> {
+): Promise<void> {
   if (pipelinePromise && loadedModelId === modelId) return pipelinePromise;
 
   // 换模型时必须等上一次加载彻底结束。
   //
   // ⚠️ 这里曾只把 pipelinePromise 置空就继续，那会在「卸载 → 立刻加载」时
-  // 让两次 pipeline() 并发跑。Transformers.js 与 ORT 的 wasm 运行时
-  // **不支持并发建session**：后一次会把前一次顶掉，前一次的收尾代码
+  // 让两次加载并发跑。Transformers.js 与 ORT 的 wasm 运行时
+  // **不支持并发建 session**：后一次会把前一次顶掉，前一次的收尾代码
   // 随后打到已失效的 wasm 对象上，触发 emscripten 的 `unreachable()`，
-  // 控制台表现为一条无信息量的 `Aborted()`（wasm侧 abort 的空消息版本）。
-  //
-  // 该问题只在「切换模型」这条路径上偶发，因此单跑一次加载测不出来。
+  // 控制台表现为一条无信息量的 `Aborted()`（wasm 侧 abort 的空消息版本）。
   if (pipelinePromise) {
     try {
       await pipelinePromise;
@@ -560,11 +438,11 @@ export async function loadLocalModel(
   // 不测就会在下载完几百 MB 权重后才炸，而那时抛出的还是无法解读的裸数字。
   //
   // 传入模型体积：权重超过 GPU 单缓冲上限时，ORT 的 WebGPU EP 必然分配失败
-  // （把整个权重塞进一个 buffer，而GPU 的 maxBufferSize 只有 2 GiB），
+  // （把整个权重塞进一个 buffer，而 GPU 的 maxBufferSize 只有 2 GiB），
   // 此时直接改走 WASM，别让用户白等几分钟下载完才发现加载不了。
   // 详见 runtime.ts 里「大模型在 WebGPU 上加载失败」的实测结论。
   const modelOption = findModelOption(modelId);
-  let runtime = await resolveRuntime(
+  const runtime = await resolveRuntime(
     undefined,
     false,
     true,
@@ -588,155 +466,59 @@ export async function loadLocalModel(
    */
   let lastRuntime: RuntimeInfo | undefined;
 
-  const attempt = async (
-    source: ModelSourceOption,
-    rt: RuntimeInfo,
-  ) => {
-    // 记录最近一次尝试的运行时 —— 失败后要据此给出**正确后端**的错误文案。
-    lastRuntime = rt;
-    const { pipeline, env } = await import('@huggingface/transformers');
-
-    // 允许跨域加载模型资源
-    env.allowLocalModels = false;
-
-    // **关键**：改用我们自己的分片缓存（IndexedDB 之外的分片 Cache API）。
-    //
-    // Chrome 的 Cache API 单条目上限约 256MB，而模型权重最小 417MB、最大 1.78GB，
-    // 直接存会失败 —— 且 Transformers.js 把 `cache.put` 的失败**静默吞掉**
-    // （只 console.warn），于是缓存里从来没有权重，每次加载都重新下载。
-    // 详见 model-cache.ts 的实测记录。
-    env.useCustomCache = true;
-    env.customCache = modelCache;
-
-    // 指向国内模型源（默认阿里巴巴魔搭社区），显著提升下载速度。
-    // 魔搭的仓库路径比HF 多一层 models/，且默认分支叫master，
-    // 因此 remoteHost 与 remotePathTemplate 需要按源分别设置。
-    env.remoteHost = source.host;
-    env.remotePathTemplate = source.pathTemplate;
-
-    // **关键**：把 ONNX Runtime 的 wasm 指向本地 public/ort/。
-    // Transformers.js 默认从 cdn.jsdelivr.net 拉取这 21MB 的 wasm，
-    // 该域名在国内常因 TLS 握手失败而报 `Failed to fetch`，
-    // 表现为「no available backend found」，模型永远加载不了。
-    // 改用同源本地文件后彻底摆脱 CDN 依赖。
-    await applyLocalWasm(env, rt.device);
-
-    const instance = await pipeline('text-generation', modelId, {
-      // dtype 由 runtime.ts 决定：WebGPU 与 WASM 现在统一用 q4。
-      //
-      // ⚠️ 不要再把 WebGPU 改回 q4f16（这段注释曾经那样写，是错的）。
-      // 实测：同一台RTX 40 系机器、同一份 493MB Qwen1.5-0.5B 权重，
-      // q4f16 + WebGPU 必定抛裸数字失败，而 q4 + WebGPU 加载成功
-      // （61s，51 个输入全在 GPU）。详见 runtime.ts 的 RuntimeDtype 对照实验表。
-      //
-      // ⚠️ WebGPU 上更不能用 fp16：那会加载完整半精度权重（体积数倍于 q4），
-      // 且部分算子在 WebGPU EP 上不受支持。
-      dtype: rt.dtype,
-      // WebGPU 不可用时 transformers 会自行回退，但显式声明更可控
-      device: rt.device === 'webgpu' ? 'webgpu' : 'wasm',
-      revision: source.revision,
-      progress_callback: (p: unknown) => {
-        const info = p as {
-          status?: string;
-          progress?: number;
-          file?: string;
-          loaded?: number;
-          total?: number;
-        };
-        if (info.status === 'progress' && typeof info.progress === 'number') {
-          const ratio = Math.min(1, Math.max(0, info.progress / 100));
-          emit({ progress: ratio });
-          onProgress?.(ratio);
-        } else if (info.status === 'ready' || info.status === 'done') {
-          emit({ progress: 1 });
-          onProgress?.(1);
-        }
-      },
-    });
-    return instance as TextGenerationPipeline;
-  };
+  // 运行时降级阶梯：WebGPU(q4) → WASM(模型精度档)。
+  // 精度维度已收敛：`runtime.ts` 现在 WebGPU 默认就选 q4
+  // （实测 q4f16 在 WebGPU EP 上必定失败，见 RuntimeDtype 的对照实验），
+  // 因此这里不需要再为精度分叉，只保留「换后端」这一个真正有效的方向。
+  //
+  // 仅当用户没有显式指定 wasm 时才追加 WASM 重试，
+  // 否则用户「就想要 wasm」被 GPU 抢占语义会不对。
+  const runtimes: RuntimeInfo[] = (() => {
+    if (runtime.device !== 'webgpu') return [runtime];
+    const ladder: RuntimeInfo[] = [runtime];
+    if (runtime.pref !== 'wasm') {
+      ladder.push({
+        ...runtime,
+        device: 'wasm' as RuntimeDevice,
+        dtype: modelWeightDtype(modelOption) as RuntimeDtype,
+        fallbackReason:
+          'WebGPU 推理失败，已自动回退到 WASM（CPU 推理，速度略慢但稳定）',
+      });
+    }
+    return ladder;
+  })();
 
   pipelinePromise = (async () => {
-    // ⚠️ 这里**不能**无条件清缓存。
-    //权重大达数百 MB，若每次加载都先删缓存，用户改个设置点一次「加载」
-    // 就要重新下载一遍，实测会反复下载十几分钟。
-    // 坏缓存由下载中断造成，而那种情况在加载时会以
-    // 「protobuf 解析失败 / unexpected end of」等形式报错，
-    // 那时再由 isCacheRelatedError 触发清理即可。
-
-    let lastError: unknown;
-
-    /**
-     * 降级阶梯：WebGPU(q4) → WASM(q4)。
-     *
-     * 精度维度已收敛：`runtime.ts` 现在 WebGPU 默认就选 q4
-     * （实测 q4f16 在 WebGPU EP 上必定失败，见 RuntimeDtype 的对照实验），
-     * 因此这里不需要再为精度分叉，只保留「换后端」这一个真正有效的方向。
-     *
-     * 仅当用户没有显式指定 wasm 时才追加 WASM 重试，
-     * 否则用户「就想要 wasm」被 GPU 抢占语义会不对。
-     */
-    const runtimes: RuntimeInfo[] = (() => {
-      if (runtime.device !== 'webgpu') return [runtime];
-      const ladder: RuntimeInfo[] = [runtime];
-      if (runtime.pref !== 'wasm') {
-        ladder.push({
-          ...runtime,
-          device: 'wasm' as RuntimeDevice,
-          dtype: 'q4' as const,
-          fallbackReason: 'WebGPU 推理失败，已自动回退到 WASM（CPU 推理，速度略慢但稳定）',
-        });
-      }
-      return ladder;
-    })();
-
-    // 外层遍历运行时，内层遍历模型源 —— 任一组合成功即返回
-    for (const rt of runtimes) {
-      if (rt !== runtime) {
-        // 换了运行时，重置进度并同步给界面。
-        // 注意这里**不**清缓存：换后端（如 WebGPU → WASM）与权重无关，
-        // 保留已下好的文件才能让降级立刻生效，而不是重新下载几百 MB。
-        emit({ runtime: rt, progress: 0 });
-      }
-
-      for (const source of orderedSources(primary)) {
-        try {
-          const instance = await attempt(source, rt);
-          // 实际生效的源/运行时可能与首选不同，同步给界面
-          if (source.id !== primary.id || rt !== runtime) {
-            emit({ sourceId: source.id, runtime: rt });
-          }
-          emit({ status: 'ready', progress: 1 });
-          activePipeline = instance as TextGenerationPipeline;
-          return instance;
-        } catch (err) {
-          lastError = err;
-          // 用 describeError 归一化后再打日志：底层有时抛裸数字/裸对象，
-          // 直接 console.error(err) 控制台里只会显示一个无从下手的数值
-          console.error(
-            `[zj-ai] 模型加载失败（源：${source.name} / 运行时：${rt.device} / 精度：${rt.dtype}）：`,
-            describeError(err, rt.device),
-            err,
-          );
-          // 只在错误确实与缓存/网络相关时才清 ——
-          // 否则会把已经完整下载好的 493MB 权重删掉，让下一次重试从头再来。
-          if (isCacheRelatedError(err)) {
-            await purgeModelCache(modelId);
-          }
-        }
-      }
+    try {
+      // 真正的加载在 **Web Worker** 里进行 ——
+      // 主线程建 session 同样会长时间同步阻塞（1.5B 实测要 300+ 秒），
+      // 那期间页面完全无响应。
+      await loadInWorker(
+        {
+          modelId,
+          runtimes: runtimes.map((r) => ({ device: r.device, dtype: r.dtype })),
+          sourceId: primary.id,
+          revision: primary.revision,
+        },
+        (ratio) => {
+          emit({ progress: ratio });
+          onProgress?.(ratio);
+        },
+      );
+      lastRuntime = runtime;
+      emit({ status: 'ready', progress: 1 });
+    } catch (err) {
+      lastRuntime = runtimes[runtimes.length - 1];
+      const message = describeError(err, lastRuntime.device);
+      console.error(
+        `[zj-ai] 模型加载失败（源：${primary.name} / 运行时：lastRuntime.device / 精度：${lastRuntime.dtype}）：`,
+        message,
+        err,
+      );
+      emit({ status: 'error', error: message });
+      pipelinePromise = null;
+      throw err;
     }
-
-    // 打印完整错误（含 stack 与可能的网络失败 URL），便于定位浏览器端加载失败原因
-    console.error('[zj-ai] 本地模型加载失败:', lastError);
-    emit({
-      status: 'error',
-      // 用最后一次尝试的运行时来描述 —— 降级阶梯可能换过后端，
-      // 用错后端会给出误导性的建议（例如「你在用 WASM 却让你改用 WASM」）。
-      error: describeError(lastError, lastRuntime?.device),
-    });
-    pipelinePromise = null;
-    throw lastError;
   })();
 
   return pipelinePromise;
@@ -769,85 +551,27 @@ function orderedSources(primary: ModelSourceOption): ModelSourceOption[] {
  * 其余情况保留已下好的权重，让降级重试能立刻用上本地文件。
  */
 export async function purgeModelCache(modelId?: string): Promise<void> {
-  if (typeof window === 'undefined' || !('caches' in window)) return;
   try {
     // 走分片缓存的删除逻辑 —— 它会连同分片与元信息一起清干净。
-    // 直接按 URL 删原始 key 是不够的：分片 key 带后缀，删不掉。
-    const urls = await listCachedFiles();
-    const targets = modelId
-      ? urls.filter((u) => u.includes(modelId))
-      : urls;
-    for (const u of targets) {
-      await modelCache.delete(u);
-    }
-    if (!modelId) await clearModelCache();
+    // 直接按 URL 删原始 key 是不够的：分片 key 带路径后缀，删不掉。
+    await deleteModelFiles(modelId);
   } catch {
     /* 缓存不可用时忽略 —— 不影响正常下载 */
   }
 }
 
-/**
- * 判断错误是否由「缓存里的坏数据 / 下载不完整」引起。
- *
- * 只有这类错误才值得清缓存重下。
- * EP 初始化失败、显存不足、算子不支持等错误与缓存无关，
- * 清了也白清，只是白白让用户再等一次几百MB 的下载。
- */
-export function isCacheRelatedError(err: unknown): boolean {
-  const text = describeError(err).toLowerCase();
-
-  // 明确指向网络 / 缓存的关键词
-  if (
-    /failed to fetch|network|networkerror|load failed|aborted|timeout|timed out|断网|网络/.test(
-      text,
-    )
-  ) {
-    return true;
-  }
-  // HTTP 层面的失败（4xx / 5xx）
-  if (/http 4\d\d|http 5\d\d|404|403|502|503/.test(text)) {
-    return true;
-  }
-  // 权重文件读不出来 / 解析失败 —— 典型是半截文件
-  if (
-    /unexpected end of|protobuf|parse|corrupt|invalid data|external data/.test(text)
-  ) {
-    return true;
-  }
-  return false;
-}
 
 /**
- * 释放已建立的 pipeline 及其底层 ORT session。
+ * 卸载 Worker 里的模型。
  *
- * Transformers.js 的 pipeline 包着tokenizer + model + 两个 ONNX session，
- * 其中 session 持有 GPU 缓冲与 wasm 堆。只把Promise 引用置空**不会**释放它们——
- * 旧实现正是如此，于是「切换模型」时新旧两个 session 同时占着资源，
- * 既吃不干净，又会和下一次加载撞车（表现为 wasm 侧的 `Aborted()`）。
- *
- * ORT 的 session 释放是异步的，且不同版本方法名不同
- * （`dispose` / `release` / `free`），因此逐个探测，不存在就跳过。
+ * ⚠️ 模型现在**只存在于 Worker**（主线程不建 session），
+ * 所以释放动作要转给 Worker 做 —— 主线程这边没有可释放的东西。
  */
 async function releaseActivePipeline(): Promise<void> {
-  const instance = activePipeline;
-  activePipeline = null;
-  if (!instance) return;
-
-  // pipeline 本身通常带 dispose（级联释放 session）
-  const candidates = [instance, (instance as { model?: unknown }).model];
-  for (const target of candidates) {
-    if (!target || typeof target !== 'object') continue;
-    const bag = target as Record<string, unknown>;
-    for (const key of ['dispose', 'release', 'free']) {
-      const fn = bag[key];
-      if (typeof fn === 'function') {
-        try {
-          await (fn as () => unknown).call(target);
-        } catch {
-          // 释放失败不应阻断卸载流程 —— 旧 session 可能已被 wasm abort 掉
-        }
-      }
-    }
+  try {
+    await unloadInWorker();
+  } catch {
+    // Worker 已被终止等情况忽略 —— 目标（释放资源）已达成
   }
 }
 
@@ -939,20 +663,29 @@ export async function localChat(
   messages: ChatMessage[],
   opts: { maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
-  const pipe = await loadLocalModel();
   const { maxTokens = 512, temperature = 0.7 } = opts;
+  const params = await resolveWorkerParams();
+  const prompt = applyChatTemplate(messages, resolveFamily(params.modelId));
 
-  const prompt = applyChatTemplate(messages, resolveFamily(loadedModelId));
-  const output = (await pipe(prompt, {
-    max_new_tokens: maxTokens,
-    temperature,
-    do_sample: temperature > 0,
-    return_full_text: false,
-  })) as unknown as Array<{ generated_text: string }>;
+  // 同样走 Worker —— 与 localChatStream 保持一致，
+  // 且保证模型只存在于 Worker 一份（主线程不再建第二份 session）。
+  let text = '';
+  const { promise } = generateInWorker(
+    {
+      ...params,
+      prompt,
+      maxTokens,
+      temperature,
+      doSample: temperature > 0,
+    },
+    (chunk) => {
+      text += chunk;
+    },
+  );
+  await promise;
 
-  const raw = output?.[0]?.generated_text ?? '';
   // 去掉可能残留的模板标记
-  return raw
+  return text
     .replace(/<\|im_start\|>assistant\s*/g, '')
     .replace(/<\|im_end\|>/g, '')
     .replace(/<\|endoftext\|>/g, '')
@@ -987,13 +720,19 @@ export async function* localChatStream(
     signal?: AbortSignal;
   } = {},
 ): AsyncGenerator<string, void, unknown> {
-  const pipe = await loadLocalModel();
   const { maxTokens = 512, temperature = 0.7, signal } = opts;
 
-  const prompt = applyChatTemplate(messages, resolveFamily(loadedModelId));
+  // ⚠️ 推理跑在 **Web Worker** 里，不是主线程。
+  //
+  // 1.5B 模型在 WASM 后端下单次 forward 会同步阻塞主线程 10 秒以上
+  //（实测首次 prefill 阻塞 10767ms），浏览器连续阻塞超过 5 秒就弹
+  // 「页面未响应」—— 而生成其实还在继续，这就是「未响应但没有报错」。
+  //
+  // Worker 自己从 Cache API 读权重（与主线程共用同一份分片缓存），
+  // 主线程全程不碰大 buffer，既不卡也不占内存。
+  const params = await resolveWorkerParams();
 
-  const { TextStreamer } = await import('@huggingface/transformers');
-  const tokenizer = await loadLocalTokenizer();
+  const prompt = applyChatTemplate(messages, resolveFamily(params.modelId));
 
   /** 待消费的增量队列 */
   const queue: string[] = [];
@@ -1009,36 +748,31 @@ export async function* localChatStream(
     notify = null;
   };
 
-  const streamer = new TextStreamer(tokenizer, {
-    skip_prompt: true,
-    skip_special_tokens: true,
-    callback_function: (text: string) => {
-      if (!text) return;
+  const { promise, abort } = generateInWorker(
+    {
+      ...params,
+      prompt,
+      maxTokens,
+      temperature,
+      doSample: temperature > 0,
+    },
+    (text) => {
       queue.push(text);
       wake();
     },
-  });
+  );
 
-  // 生成任务在后台推进
-  const task = (async () => {
-    try {
-      await pipe(prompt, {
-        max_new_tokens: maxTokens,
-        temperature,
-        do_sample: temperature > 0,
-        return_full_text: false,
-        streamer,
-      });
-    } catch (err) {
-      failure = err;
-    } finally {
-      done = true;
-      wake();
-    }
-  })();
+  // 生成任务在后台推进；失败要能被消费方看到
+  const task = promise.catch((err) => {
+    failure = err;
+  }).finally(() => {
+    done = true;
+    wake();
+  });
 
   // 中断时直接结束消费
   const onAbort = () => {
+    abort();
     done = true;
     wake();
   };
@@ -1064,20 +798,49 @@ export async function* localChatStream(
   }
 }
 
-/** 本地 tokenizer（懒加载，供 TextStreamer 使用） */
-let localTokenizer: unknown = null;
-
-/** 加载（并缓存）本地模型的 tokenizer */
-async function loadLocalTokenizer(): Promise<never> {
-  if (localTokenizer) return localTokenizer as never;
-  const { AutoTokenizer, env } = await import('@huggingface/transformers');
-  const source = findModelSource(readModelSource());
-  env.allowLocalModels = false;
-  env.remoteHost = source.host;
-  env.remotePathTemplate = source.pathTemplate;
-  localTokenizer = await AutoTokenizer.from_pretrained(
-    loadedModelId || DEFAULT_LOCAL_MODEL,
-    { revision: source.revision },
+/**
+ * 解析出「要在 Worker 里跑」所需的参数。
+ *
+ * 模型 id 取**用户选中的**那个（与 loadLocalModel 一致），
+ * 运行时与精度沿用主线程的探测结果 —— 这样 Worker 与主线程
+ * 用的是同一套模型/精度/后端组合，不会出现「界面显示 A、实际跑 B」。
+ */
+async function resolveWorkerParams(): Promise<{
+  modelId: string;
+  runtimes: { device: 'webgpu' | 'wasm'; dtype: string }[];
+  sourceId: ModelSourceId;
+  revision: string;
+}> {
+  const modelId = readSelectedModel();
+  const option = findModelOption(modelId);
+  const runtime = await resolveRuntime(
+    undefined,
+    false,
+    true,
+    option?.q4Bytes,
+    modelWeightDtype(option),
   );
-  return localTokenizer as never;
+  const source = findModelSource(readModelSource());
+
+  // 降级阶梯与 loadLocalModel 保持一致：WebGPU(q4) → WASM(模型精度档)
+  const runtimes: { device: 'webgpu' | 'wasm'; dtype: string }[] = [];
+  if (runtime.device === 'webgpu') {
+    runtimes.push({ device: 'webgpu', dtype: 'q4' });
+    if (runtime.pref !== 'wasm') {
+      runtimes.push({
+        device: 'wasm',
+        dtype: modelWeightDtype(option),
+      });
+    }
+  } else {
+    runtimes.push({ device: runtime.device, dtype: runtime.dtype });
+  }
+
+  return {
+    modelId,
+    runtimes,
+    sourceId: source.id,
+    revision: source.revision,
+  };
 }
+

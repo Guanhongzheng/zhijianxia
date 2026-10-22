@@ -293,10 +293,29 @@ async function req(path, { method = 'GET', body, token } = {}) {
     new URL('../src/lib/ai/local-engine.ts', import.meta.url),
     'utf8'
   );
+  // 以下模块在断言里被多处引用，统一在这里读一次
+  const workerSrc = readFileSync(
+    new URL('../src/lib/ai/ai-worker.ts', import.meta.url),
+    'utf8'
+  );
+  const clientSrc = readFileSync(
+    new URL('../src/lib/ai/ai-client.ts', import.meta.url),
+    'utf8'
+  );
+  const ortSetupSrc = readFileSync(
+    new URL('../src/lib/ai/ort-setup.ts', import.meta.url),
+    'utf8'
+  );
+  const cacheErrSrc = readFileSync(
+    new URL('../src/lib/ai/cache-errors.ts', import.meta.url),
+    'utf8'
+  );
   check(
-    /device:\s*rt\.device === 'webgpu' \? 'webgpu' : 'wasm'/.test(engineSrc) &&
-      /dtype:\s*rt\.dtype/.test(engineSrc),
-    'pipeline 显式传入 device 与 dtype（WebGPU 走 q4f16 / WASM 走 q4）',
+    // pipeline 的 device/dtype 现在由 Worker 传入
+    /device:\s*rt\.device === 'webgpu' \? 'webgpu' : 'wasm'/.test(workerSrc) &&
+      /dtype:\s*rt\.dtype/.test(workerSrc) &&
+      /runtimes/.test(workerSrc),
+    'pipeline 显式传入 device 与 dtype（WebGPU 走 q4 / WASM 走模型精度档）',
     'device + dtype 已接线'
   );
 
@@ -347,9 +366,12 @@ async function req(path, { method = 'GET', body, token } = {}) {
 
   // 加载失败时不得无条件清缓存：权重可达数百 MB，
   // 无条件清会让用户每次点「加载」都重新下载一遍。
+  // ⚠️ 判定与清缓存重试现在都在 Worker 里（加载已搬到 Worker）。
   check(
-    /isCacheRelatedError/.test(engineSrc) &&
-      /if \(isCacheRelatedError\(err\)\)/.test(engineSrc),
+    /isCacheRelatedError/.test(cacheErrSrc) &&
+      /isCacheRelatedError\(err\)/.test(workerSrc) &&
+      /deleteModelFiles\(modelId\)/.test(workerSrc) &&
+      /cacheRetried/.test(workerSrc),
     '仅在错误与缓存相关时才清模型缓存（避免重复下载数百MB 权重）',
     '缓存清理已条件化'
   );
@@ -358,14 +380,16 @@ async function req(path, { method = 'GET', body, token } = {}) {
   //（ORT 有意把 shape 类算子留在 CPU），但它们走 C++/wasm 侧的原生 logger，
   // 绕过 `env.backends.onnx.logLevel`，只能靠 console 出口过滤。
   // 过滤条件必须极窄，不能误吞真正的 ORT 报错。
+  // ⚠️ 过滤器已抽到 ort-setup.ts（主线程与 Worker 共用 —— 推理在 Worker 里跑，
+  // Worker 的 console.error 不会经过主线程的包装）。
   const ortFilterBody =
-    engineSrc.split('const ORT_BENIGN_LOG')[1]?.split('async function applyLocalWasm')[0] ?? '';
+    ortSetupSrc.split('const ORT_BENIGN_LOG')[1]?.split('/** ORT env 的最小结构')[0] ?? '';
   check(
-    /installOrtLogFilter/.test(engineSrc) &&
-      /installOrtLogFilter\(\)/.test(engineSrc.split('applyLocalWasm(')[1] ?? '') &&
+    /installOrtLogFilter/.test(ortSetupSrc) &&
+      /installOrtLogFilter\(\)/.test(ortSetupSrc) &&
       /VerifyEachNodeIsAssignedToAnEp/.test(ortFilterBody) &&
-      /window\.console\.error\s*=/.test(ortFilterBody) &&
-      !/console\.(warn|log)\s*=/.test(engineSrc),
+      /console\.error\s*=/.test(ortFilterBody) &&
+      !/console\.(warn|log)\s*=/.test(ortSetupSrc),
     'ORT 的 VerifyEachNodeIsAssignedToAnEp 良性警告经窄过滤 console.error 消除（logLevel 对 C++ 侧无效）',
     '过滤条件限定为 VerifyEachNodeIsAssignedToAnEp，且只拦 console.error'
   );
@@ -376,13 +400,18 @@ async function req(path, { method = 'GET', body, token } = {}) {
   // 也没等在途加载 —— 于是「切换模型」会让两次 pipeline() 并发，
   // 而 ORT 的 wasm 运行时不支持并发建 session，控制台表现为
   // 一条无信息量的 `Aborted()`（emscripten abort 的空消息形式）。
+  //
+  // ⚠️ 模型现在只存在于 Worker，主线程的释放动作要转给 Worker。
   check(
     /async function releaseActivePipeline/.test(engineSrc) &&
-      /dispose/.test(engineSrc) &&
+      /await unloadInWorker\(\)/.test(engineSrc) &&
       /await releaseActivePipeline\(\)/.test(engineSrc) &&
       /export async function unloadLocalModel\(\)\s*\{[\s\S]{0,400}?await pipelinePromise/.test(
         engineSrc,
-      ),
+      ) &&
+      // Worker 侧要真的释放 session
+      /async function releasePipeline/.test(workerSrc) &&
+      /dispose/.test(workerSrc),
     '卸载模型会释放 ORT session 并等待在途加载结束（避免并发建session 触发 Aborted()）',
     'unload 已await 在途加载并释放 session'
   );
@@ -409,6 +438,45 @@ async function req(path, { method = 'GET', body, token } = {}) {
       /modelId:\s*''/.test(engineSrc),
     '无参 loadLocalModel 使用用户选中的模型，且卸载后清空 modelId（避免「运行中」标记错位）',
     '选中模型已持久化，卸载会清空 modelId'
+  );
+
+  // ---------- 推理必须跑在 Web Worker 里 ----------
+  //
+  // 1.5B 模型在 WASM 后端下单次 forward 会**同步阻塞主线程 10 秒以上**
+  //（实测首次 prefill 阻塞 10767ms，后续每 token 约 700ms），
+  // 浏览器连续阻塞超过 5 秒就弹「页面未响应」——
+  // 而生成其实还在继续，所以用户看到的是「未响应但没有报错」。
+  //
+  // 修法：加载与推理都搬到 Web Worker，Worker 自己从 Cache API 读权重
+  //（与主线程共用同一份分片缓存），主线程全程不碰大 buffer。
+  const modelCacheSrc = readFileSync(
+    new URL('../src/lib/ai/model-cache.ts', import.meta.url),
+    'utf8',
+  );
+  check(
+    /generateInWorker/.test(engineSrc) &&
+      /loadInWorker/.test(engineSrc) &&
+      /new Worker\(new URL\('\.\/ai-worker\.ts', import\.meta\.url\)\)/.test(clientSrc) &&
+      // Worker 里的加载要互斥 —— ORT 的 wasm 不支持并发建 session
+      /loadingPromise/.test(workerSrc) &&
+      // 多线程：不再是写死的 numThreads = 1
+      /numThreads\s*=\s*resolveWasmThreads\(\)/.test(ortSetupSrc) &&
+      /crossOriginIsolated/.test(ortSetupSrc) &&
+      // 缓存要用 globalThis —— Worker 里没有 window
+      /globalThis/.test(modelCacheSrc) &&
+      !/typeof window === 'undefined'/.test(modelCacheSrc),
+    '加载与推理都在 Web Worker 中执行（多线程 + 互斥），缓存用 globalThis 以兼容 Worker',
+    'Worker 推理链路已就位'
+  );
+
+  // Worker 的每条消息都必须回同一个 id —— 否则主线程的 pending map
+  // 匹配不到，promise 永远 pending（表现为「点了加载没反应」）。
+  check(
+    /type: 'unload'; id: string/.test(workerSrc) &&
+      /post\(\{ type: 'done', id: req\.id \}\)/.test(workerSrc) &&
+      !/id: 'unload'/.test(workerSrc),
+    'Worker 回消息必须用 req.id（否则主线程 promise 永不 resolve）',
+    '消息 id 已对齐'
   );
 
   // 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session。
@@ -553,8 +621,9 @@ async function req(path, { method = 'GET', body, token } = {}) {
   );
   check(
     /CHUNK_SIZE\s*=\s*64\s*\*\s*1024\s*\*\s*1024/.test(cacheSrc) &&
-      /useCustomCache\s*=\s*true/.test(engineSrc) &&
-      /customCache\s*=\s*modelCache/.test(engineSrc) &&
+      // ⚠️ customCache 现在由 **Worker** 设置（加载与推理都已搬到 Worker）
+      /useCustomCache\s*=\s*true/.test(workerSrc) &&
+      /customCache\s*=\s*modelCache/.test(workerSrc) &&
       /modelCache\.put/.test(dlrSrc) &&
       /modelCache\.match/.test(dlrSrc) &&
       // key 用路径而非 fragment
