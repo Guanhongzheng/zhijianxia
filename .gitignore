@@ -66,3 +66,7 @@ verify-*.mjs
 
 # 第三方插件本地工程（由 npm run plugin:new 生成，属个人草稿）
 my-plugins/
+
+# 性能测量用的构建产物与浏览器 profile
+.next-perf*/
+.tmp-perf-profile/

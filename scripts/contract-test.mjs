@@ -279,6 +279,56 @@ async function req(path, { method = 'GET', body, token } = {}) {
     '子路径导入齐全'
   );
 
+  // ⚠️ LangChain 绝不能出现在首屏的静态导入链上。
+  //
+  // 实测（production build）：chain.ts 连同 zod 占 1570 KB 未压缩，
+  // 是整个构建产物的 46%，传输后 412 KB —— 占首屏 JS 的 61%。
+  // 而这条链是首屏必经的：
+  //   page.tsx → providers.tsx → plugin-store.ts → scheduler.ts → chain.ts
+  // （providers 要 boot 插件内核，plugin-store 又静态 import scheduler）
+  // 于是「用户只是打开首页、根本没打算用 AI」也要先下载 412 KB 编排库。
+  //
+  // 改成动态导入后，首屏 JS 从 678 KB 降到 558 KB（-120 KB / -17.7%）。
+  const schedSrc = readFileSync(
+    new URL('../src/lib/ai/scheduler.ts', import.meta.url),
+    'utf8',
+  );
+  const schedCode = schedSrc
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join('\n');
+  // 找出所有引用 './chain' 的行，逐条判断是否只是类型导入
+  //（`import type {...}` 与 `export type {...}` 都在编译期擦除，不进 bundle；
+  //  真正要禁的是「运行时值」的静态导入，如 `import { runChatChain } from './chain'`）
+  const chainRefLines = schedCode
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.includes("'./chain'") || l.includes('"./chain"'));
+  const runtimeStaticImports = chainRefLines.filter(
+    (l) =>
+      /^(import|export)\s*\{/.test(l) &&
+      !/^(import|export)\s+type\s*\{/.test(l),
+  );
+  check(
+    // 必须有一个「运行时」的动态导入：loadChain() 里 return import('./chain')
+    // （写成裸 import() 而非 await import()，两者等价）
+    /(await|return)\s+import\('\.\/chain'\)/.test(schedCode) &&
+      runtimeStaticImports.length === 0,
+    'LangChain 编排层不在首屏静态导入链上（scheduler 改为动态 import，实测首屏 -120 KB）',
+    runtimeStaticImports.length === 0
+      ? '已改为动态导入'
+      : `存在运行时静态导入：${runtimeStaticImports.join(' / ')}`,
+  );
+
+  // ⚠️ ConversationMemory 是类，不能直接 re-export ——
+  // 静态 re-export 会把 chain 拖回首屏。必须走工厂函数。
+  check(
+    /createConversationMemory/.test(schedCode) &&
+      !/export\s*\{[^}]*ConversationMemory[^}]*\}\s*from\s*'\.\/chain'/.test(schedCode),
+    'ConversationMemory 改为工厂函数惰性创建（类的静态 re-export 会拖重依赖回首屏）',
+    /createConversationMemory/.test(schedCode) ? '已惰性化' : '仍是静态 re-export',
+  );
+
   // 运行时探测：WebGPU 优先，且 dtype 必须与 device 配套
   const runtimeSrc = readFileSync(
     new URL('../src/lib/ai/runtime.ts', import.meta.url),

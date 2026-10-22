@@ -21,7 +21,8 @@
     "e2e:offline": "node scripts/zj-e2e-offline.js",
     "contract": "node scripts/contract-test.mjs",
     "e2e:pollution": "node scripts/zj-e2e-pollution.js",
-    "plugin:new": "node scripts/new-plugin.mjs"
+    "plugin:new": "node scripts/new-plugin.mjs",
+    "perf:check": "node perf-regress.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.152",
