@@ -1,0 +1,70 @@
+{
+  "format": "zhijianxia.theme",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "lime-kick",
+    "name": "青柠",
+    "version": "1.0.0",
+    "description": "明快的高饱和亮色主题。青柠绿作主色搭配暖灰底，卡片走毛玻璃质感，适合白天与需要提神的场景。",
+    "author": "智简匣",
+    "preview": "🍋",
+    "tags": ["亮色", "毛玻璃", "高饱和", "白天"],
+    "category": "综合"
+  },
+  "pack": {
+    "id": "lime-kick",
+    "name": "青柠",
+    "builtin": false,
+    "category": "综合",
+    "description": "明快的高饱和亮色主题。青柠绿作主色搭配暖灰底，卡片走毛玻璃质感。",
+    "author": "智简匣",
+    "preview": "🍋",
+    "tags": ["亮色", "毛玻璃", "高饱和"],
+    "light": {
+      "accent": "#4a7c0f",
+      "accentSoft": "#e8f3d9",
+      "card": "#fdfdfb",
+      "bg": "#f5f6f1",
+      "fg": "#1b1f16",
+      "mutedFg": "#5f6656",
+      "border": "#dde1d3",
+      "shadow": 1
+    },
+    "dark": {
+      "accent": "#a3d13f",
+      "accentSoft": "#25300f",
+      "card": "#171a14",
+      "bg": "#0e1109",
+      "fg": "#edf0e6",
+      "mutedFg": "#a8b096",
+      "border": "#2c3324",
+      "shadow": 2
+    },
+    "wallpaper": {
+      "light": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(140deg, #fbfcf8 0%, #f0f4e8 50%, #e6efd6 100%)",
+        "veil": 0.9
+      },
+      "dark": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(150deg, #141a0e 0%, #0e1109 60%, #0a0d06 100%)",
+        "veil": 0.9
+      }
+    },
+    "card": {
+      "style": "glass",
+      "borderWidth": 1,
+      "accentBar": true
+    },
+    "nav": {
+      "style": "glass",
+      "height": 62,
+      "showIcon": true
+    },
+    "cssVars": {
+      "card-alpha": 0.72,
+      "card-blur": "14px"
+    }
+  }
+}

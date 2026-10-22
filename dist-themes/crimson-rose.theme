@@ -1,0 +1,66 @@
+{
+  "format": "zhijianxia.theme",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "crimson-rose",
+    "name": "绯",
+    "version": "1.0.0",
+    "description": "带朱砂与绯色质感的双面主题。亮色如宣纸落朱砂，暗色如暗夜里的红玛瑙，卡片走描边风格，适合需要明确视觉边界的密集信息场景。",
+    "author": "智简匣",
+    "preview": "🌹",
+    "tags": ["描边卡片", "暖色", "双面"],
+    "category": "卡片"
+  },
+  "pack": {
+    "id": "crimson-rose",
+    "name": "绯",
+    "builtin": false,
+    "category": "卡片",
+    "description": "带朱砂与绯色质感的双面主题。卡片走描边风格，适合密集信息场景。",
+    "author": "智简匣",
+    "preview": "🌹",
+    "tags": ["描边卡片", "暖色"],
+    "light": {
+      "accent": "#b03a52",
+      "accentSoft": "#fae7eb",
+      "card": "#fffaf8",
+      "bg": "#fdf6f4",
+      "fg": "#241618",
+      "mutedFg": "#73605f",
+      "border": "#e8d0d2",
+      "shadow": 0
+    },
+    "dark": {
+      "accent": "#c04a60",
+      "accentSoft": "#3a1c22",
+      "card": "#1b1416",
+      "bg": "#120d0e",
+      "fg": "#f0e4e5",
+      "mutedFg": "#b09a9c",
+      "border": "#3a2a2c",
+      "shadow": 1
+    },
+    "wallpaper": {
+      "light": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(155deg, #fffaf8 0%, #fbeef0 55%, #f6e2e4 100%)",
+        "veil": 0.93
+      },
+      "dark": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(165deg, #1e1416 0%, #120d0e 55%, #0c0809 100%)",
+        "veil": 0.92
+      }
+    },
+    "card": {
+      "style": "outline",
+      "borderWidth": 2,
+      "accentBar": true
+    },
+    "nav": {
+      "style": "solid",
+      "height": 58,
+      "showIcon": true
+    }
+  }
+}

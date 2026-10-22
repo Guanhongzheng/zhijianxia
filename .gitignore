@@ -70,3 +70,8 @@ my-plugins/
 # 性能测量用的构建产物与浏览器 profile
 .next-perf*/
 .tmp-perf-profile/
+
+# 主题包工具的转译缓存与截图产物
+.theme-verify-tmp/
+theme-shots/
+.tmp-theme-profile/

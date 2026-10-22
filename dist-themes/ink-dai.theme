@@ -1,0 +1,66 @@
+{
+  "format": "zhijianxia.theme",
+  "formatVersion": 1,
+  "manifest": {
+    "id": "ink-dai",
+    "name": "墨黛",
+    "version": "1.0.0",
+    "description": "东方水墨的暗色主题。宣纸底色与松烟墨的层次，主色取自石青。长时间阅读柔和不刺眼，适合夜间与专注写作。",
+    "author": "智简匣",
+    "preview": "🖌️",
+    "tags": ["暗色", "护眼", "东方", "高对比"],
+    "category": "配色"
+  },
+  "pack": {
+    "id": "ink-dai",
+    "name": "墨黛",
+    "builtin": false,
+    "category": "配色",
+    "description": "东方水墨的暗色主题。宣纸底色与松烟墨的层次，主色取自石青。",
+    "author": "智简匣",
+    "preview": "🖌️",
+    "tags": ["暗色", "护眼", "东方"],
+    "light": {
+      "accent": "#3f6d8f",
+      "accentSoft": "#dfe9f1",
+      "card": "#fbf8f3",
+      "bg": "#f4efe6",
+      "fg": "#1f2428",
+      "mutedFg": "#6b7178",
+      "border": "#ddd5c7",
+      "shadow": 1
+    },
+    "dark": {
+      "accent": "#457a99",
+      "accentSoft": "#1d2c38",
+      "card": "#161b20",
+      "bg": "#0f1317",
+      "fg": "#e8e6e1",
+      "mutedFg": "#9aa3ab",
+      "border": "#2a3239",
+      "shadow": 2
+    },
+    "wallpaper": {
+      "light": {
+        "kind": "gradient",
+        "gradient": "linear-gradient(160deg, #f7f3ec 0%, #ece5d9 55%, #e3ddd0 100%)",
+        "veil": 0.92
+      },
+      "dark": {
+        "kind": "gradient",
+        "gradient": "radial-gradient(ellipse at 30% 20%, #1a2530 0%, #0f1317 55%, #090c0f 100%)",
+        "veil": 0.88
+      }
+    },
+    "card": {
+      "style": "elevated",
+      "borderWidth": 1,
+      "accentBar": false
+    },
+    "nav": {
+      "style": "flat",
+      "height": 60,
+      "showIcon": true
+    }
+  }
+}
