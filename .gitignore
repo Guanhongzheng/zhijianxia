@@ -60,3 +60,6 @@ coverage/
 diag*.mjs
 verify-*.mjs
 *.tmp.png
+
+# 自动化验证用的临时浏览器 profile
+.tmp-verify-profile/

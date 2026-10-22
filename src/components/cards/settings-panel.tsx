@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Check,
   Cpu,
   Database,
+  Download,
   Info,
   KeyRound,
   Network,
@@ -14,6 +15,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Trash2,
+  Upload,
   User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -48,6 +50,16 @@ import {
   type RuntimeInfo,
   type RuntimePref,
 } from '@/lib/ai/local-engine';
+import {
+  getAllDownloadStates,
+  invalidateDownloadState,
+  type ModelDownloadState,
+} from '@/lib/ai/model-download';
+import {
+  downloadModel,
+  type DownloadProgress,
+} from '@/lib/ai/model-downloader';
+import { canUseWebGpu, findModelOption, WEBGPU_MAX_Q4_BYTES } from '@/lib/ai/local-models';
 import { ProfileSettings } from '@/components/cards/profile-settings';
 import { PersonalizationSettings } from '@/components/cards/personalization-settings';
 import { ApiCapabilitySettings } from '@/components/cards/api-capability-settings';
@@ -132,6 +144,37 @@ function AiEngineSettings() {
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | undefined>(
     peekRuntime(),
   );
+  /**
+   * 各模型的下载状态 —— 用来显示「已下载」标记，
+   * 并把「下载」与「加载」两个动作分开。
+   */
+  const [downloadStates, setDownloadStates] = useState<
+    Record<string, ModelDownloadState>
+  >({});
+  /** 正在下载的模型 id（null = 没在下载） */
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  /** 下载进度 */
+  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(
+    null,
+  );
+
+  /**
+   * 刷新下载状态。
+   * 缓存内容会因下载/清缓存而变，所以监听这几处变化后重新扫描。
+   */
+  const refreshDownloadStates = useCallback(async () => {
+    const states = await getAllDownloadStates();
+    setDownloadStates(states);
+  }, []);
+
+  useEffect(() => {
+    void refreshDownloadStates();
+    // 轮询兜底：模型加载后缓存会多出条目，需要刷新「已下载」标记
+    const timer = setInterval(() => {
+      void refreshDownloadStates();
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [refreshDownloadStates]);
 
   useEffect(() => {
     // 订阅本地模型加载进度
@@ -156,8 +199,19 @@ function AiEngineSettings() {
     };
   }, []);
 
-  /** 实际生效的运行时：优先用引擎上报的，其次用探测结果 */
+  /**
+   * 实际生效的运行时：优先用引擎上报的，其次用探测结果。
+   *
+   * ⚠️ 探测结果要与**当前所选模型**的体积一起看 ——
+   * 权重超过 GPU 单缓冲上限时会被改判为 WASM（见 runtime.ts 的实测结论）。
+   * 也就是说「WebGPU 可用」≠「这个模型能用 WebGPU」。
+   */
   const activeRuntime = aiState.runtime ?? runtimeInfo;
+  /** 当前所选模型能否走 WebGPU */
+  const selectedGpuOk = canUseWebGpu(findModelOption(modelId));
+  /** 面板上应当展示的设备 —— 超限时直接显示 WASM，避免误导 */
+  const shownDevice: 'webgpu' | 'wasm' =
+    activeRuntime?.device === 'webgpu' && !selectedGpuOk ? 'wasm' : (activeRuntime?.device ?? 'wasm');
 
   return (
     <div className="space-y-4">
@@ -246,64 +300,132 @@ function AiEngineSettings() {
 
       <SettingRow
         title="选择要下载的模型"
-        desc="自行挑选模型，下载后完全离线可用；切换模型会重新下载权重"
+        desc="先下载权重到本地，再加载运行；已下载的模型会标记「已下载」，加载时不再消耗流量"
       >
         <div className="space-y-2">
           <div className="flex flex-col gap-1.5">
             {LOCAL_MODEL_OPTIONS.map((m) => {
               const active = modelId === m.id;
               const loaded = aiState.modelId === m.id && aiState.status === 'ready';
+              const dl = downloadStates[m.id];
+              const downloaded = dl?.downloaded === true;
+              const isDownloading = downloadingId === m.id;
+              const gpuOk = canUseWebGpu(m);
               return (
-                <button
+                <div
                   key={m.id}
-                  type="button"
-                  onClick={() => {
-                    setModelId(m.id);
-                    if (loaded) {
-                      notify('该模型已在运行中', 'info');
-                    } else {
-                      notify(`已选择 ${m.name}，点击下方按钮开始下载`, 'success');
-                    }
-                  }}
                   className={cn(
-                    'flex items-start gap-2.5 rounded-md border px-2.5 py-2 text-left transition-colors',
+                    'rounded-md border px-2.5 py-2 transition-colors',
                     active
                       ? 'border-[var(--zj-accent)] bg-[var(--zj-accent-soft)]'
                       : 'border-[var(--zj-border)] hover:bg-[var(--zj-muted)]',
                   )}
                 >
-                  <span className="mt-0.5 shrink-0">
-                    {active ? (
-                      <Check className="size-3.5 text-[var(--zj-accent)]" />
-                    ) : (
-                      <span className="block size-3.5 rounded-full border border-[var(--zj-border)]" />
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-xs font-medium">{m.name}</span>
-                      <Badge variant="outline" className="text-[0.625rem]">
-                        {m.size}
-                      </Badge>
-                      {m.recommended && (
-                        <Badge variant="success" className="text-[0.625rem]">
-                          推荐
-                        </Badge>
-                      )}
-                      {loaded && (
-                        <Badge variant="solid" className="text-[0.625rem]">
-                          运行中
-                        </Badge>
-                      )}
-                    </span>
-                    <span className="mt-0.5 block text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
-                      {m.desc}
-                    </span>
-                    <span className="mt-0.5 block text-[0.625rem] text-[var(--zj-muted-fg)] opacity-70">
-                      {m.approxSize} · {m.id}
-                    </span>
-                  </span>
-                </button>
+                  <div className="flex items-start gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModelId(m.id);
+                        if (loaded) {
+                          notify('该模型已在运行中', 'info');
+                        } else if (downloaded) {
+                          notify(`已选择 ${m.name}，点击「加载模型」即可启动`, 'success');
+                        } else {
+                          notify(`已选择 ${m.name}，点击「下载模型」开始下载`, 'success');
+                        }
+                      }}
+                      className="flex min-w-0 flex-1 items-start gap-2.5 text-left"
+                    >
+                      <span className="mt-0.5 shrink-0">
+                        {active ? (
+                          <Check className="size-3.5 text-[var(--zj-accent)]" />
+                        ) : (
+                          <span className="block size-3.5 rounded-full border border-[var(--zj-border)]" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-xs font-medium">{m.name}</span>
+                          <Badge variant="outline" className="text-[0.625rem]">
+                            {m.size}
+                          </Badge>
+                          {m.recommended && (
+                            <Badge variant="success" className="text-[0.625rem]">
+                              推荐
+                            </Badge>
+                          )}
+                          {loaded && (
+                            <Badge variant="solid" className="text-[0.625rem]">
+                              运行中
+                            </Badge>
+                          )}
+                          {!loaded && downloaded && (
+                            <Badge variant="outline" className="text-[0.625rem]">
+                              已下载
+                            </Badge>
+                          )}
+                          {!gpuOk && (
+                            <Badge
+                              variant="outline"
+                              className="text-[0.625rem] text-amber-600 dark:text-amber-400"
+                            >
+                              仅 WASM
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
+                          {m.desc}
+                        </span>
+                        <span className="mt-0.5 block text-[0.625rem] text-[var(--zj-muted-fg)] opacity-70">
+                          {m.approxSize} · {m.id}
+                        </span>
+                      </span>
+                    </button>
+
+                    {/* 每个模型独立的「下载」按钮 */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 shrink-0 px-2 text-[0.6875rem]"
+                      disabled={
+                        warming ||
+                        isDownloading ||
+                        downloadingId !== null ||
+                        downloaded
+                      }
+                      onClick={async () => {
+                        setDownloadingId(m.id);
+                        setDownloadProgress(null);
+                        try {
+                          const r = await downloadModel(m, sourceId, (p) =>
+                            setDownloadProgress(p),
+                          );
+                          notify(
+                            `${m.name} 下载完成（${(r.ms / 1000).toFixed(1)}s），现在可以加载`,
+                            'success',
+                          );
+                          await refreshDownloadStates();
+                        } catch (err) {
+                          const reason =
+                            err instanceof Error && err.message
+                              ? err.message
+                              : '未知错误';
+                          notify(`下载失败：${reason}`, 'error');
+                        } finally {
+                          setDownloadingId(null);
+                          setDownloadProgress(null);
+                        }
+                      }}
+                    >
+                      <Download className="size-3.5" />
+                      {isDownloading
+                        ? `${Math.round((downloadProgress?.ratio ?? 0) * 100)}%`
+                        : downloaded
+                          ? '已下载'
+                          : '下载'}
+                    </Button>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -338,8 +460,8 @@ function AiEngineSettings() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-medium">推理运行时</p>
               <div className="flex items-center gap-1.5">
-                <Badge variant={activeRuntime?.device === 'webgpu' ? 'success' : 'outline'}>
-                  {activeRuntime?.device === 'webgpu' ? 'WebGPU' : 'WASM'}
+                <Badge variant={shownDevice === 'webgpu' ? 'success' : 'outline'}>
+                  {shownDevice === 'webgpu' ? 'WebGPU' : 'WASM'}
                 </Badge>
                 {activeRuntime && (
                   <span className="text-[0.6875rem] text-[var(--zj-muted-fg)]">
@@ -400,13 +522,15 @@ function AiEngineSettings() {
 
             {/* 能力说明：把「为什么没能用 WebGPU」讲清楚 */}
             <p className="text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
-              {activeRuntime?.device === 'webgpu'
-                ? `已启用 WebGPU 加速${activeRuntime.adapterInfo ? `（${activeRuntime.adapterInfo}）` : ''}，模型在显卡上推理。`
-                : runtimeInfo && !runtimeInfo.hasWebGpuApi
-                  ? '当前浏览器不支持 WebGPU，将使用 WASM 推理。建议使用较新版本的 Edge / Chrome 以启用 GPU 加速。'
-                  : runtimeInfo && !runtimeInfo.hasWebGpuAdapter
-                    ? '浏览器暴露了 WebGPU 接口，但未能获取到可用的 GPU 适配器（可能是驱动或系统策略限制），将使用 WASM 推理。'
-                    : '正在检测 WebGPU 能力…'}
+              {shownDevice === 'webgpu'
+                ? `已启用 WebGPU 加速${activeRuntime?.adapterInfo ? `（${activeRuntime.adapterInfo}）` : ''}，模型在显卡上推理。`
+                : !selectedGpuOk
+                  ? `所选模型权重约 ${Math.round((findModelOption(modelId)?.q4Bytes ?? 0) / 1024 / 1024)} MB，超过 GPU 单缓冲上限（${Math.round(WEBGPU_MAX_Q4_BYTES / 1024 / 1024)} MB），只能使用 WASM 推理。`
+                  : runtimeInfo && !runtimeInfo.hasWebGpuApi
+                    ? '当前浏览器不支持 WebGPU，将使用 WASM 推理。建议使用较新版本的 Edge / Chrome 以启用 GPU 加速。'
+                    : runtimeInfo && !runtimeInfo.hasWebGpuAdapter
+                      ? '浏览器暴露了 WebGPU 接口，但未能获取到可用的 GPU 适配器（可能是驱动或系统策略限制），将使用 WASM 推理。'
+                      : '正在检测 WebGPU 能力…'}
             </p>
 
             {/* 运行中发生的降级要如实告知 */}
@@ -425,7 +549,14 @@ function AiEngineSettings() {
             <Button
               variant="outline"
               size="sm"
-              disabled={warming || aiState.status === 'loading'}
+              disabled={
+                warming ||
+                aiState.status === 'loading' ||
+                downloadingId !== null ||
+                // 未下载完不让加载 —— 避免又变成「下载并加载」的一把梭。
+                // 注意 downloadStates 初始为空，此时不拦（等扫描结果出来再拦）。
+                downloadStates[modelId]?.downloaded === false
+              }
               onClick={async () => {
                 setWarming(true);
                 try {
@@ -446,13 +577,18 @@ function AiEngineSettings() {
                 } finally {
                   setWarming(false);
                   setAiState(getLocalAiState());
+                  void refreshDownloadStates();
                 }
               }}
             >
-              <RefreshCw className="size-3.5" />
+              {aiState.status === 'ready' && aiState.modelId === modelId ? (
+                <RefreshCw className="size-3.5" />
+              ) : (
+                <Upload className="size-3.5" />
+              )}
               {aiState.status === 'ready' && aiState.modelId === modelId
                 ? '重新加载模型'
-                : `下载并加载 ${modelId.split('/').pop()}`}
+                : `加载模型 ${modelId.split('/').pop()}`}
             </Button>
 
             {aiState.status === 'ready' && (
@@ -479,6 +615,10 @@ function AiEngineSettings() {
                   setWarming(true);
                   try {
                     await purgeModelCache();
+                    // 缓存被清空了，「已下载」标记必须跟着失效，
+                    // 否则界面会显示「已下载」但其实文件已经没了。
+                    invalidateDownloadState();
+                    await refreshDownloadStates();
                     await unloadLocalModel();
                     await loadLocalModel(modelId);
                     notify('已清理缓存并重新加载成功', 'success');
@@ -489,6 +629,7 @@ function AiEngineSettings() {
                   } finally {
                     setWarming(false);
                     setAiState(getLocalAiState());
+                    void refreshDownloadStates();
                   }
                 }}
               >
@@ -497,6 +638,19 @@ function AiEngineSettings() {
               </Button>
             )}
           </div>
+
+          {/* 两步流程的说明 + 状态提示 */}
+          <p className="text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
+            {downloadingId
+              ? `正在下载 ${downloadingId.split('/').pop()}… ${Math.round((downloadProgress?.ratio ?? 0) * 100)}%${
+                  downloadProgress?.speed
+                    ? ` · ${(downloadProgress.speed / 1024 / 1024).toFixed(1)} MB/s`
+                    : ''
+                }`
+              : downloadStates[modelId]?.downloaded === false
+                ? '所选模型尚未下载。请先点模型右侧的「下载」按钮把权重存到本地，完成后再点「加载模型」。'
+                : '模型权重已存在本地缓存，「加载模型」不再需要下载流量。'}
+          </p>
 
           {/* 失败详情：显示真实错误原因与当前生效的源 */}
           {aiState.status === 'error' && aiState.error && (

@@ -21,12 +21,51 @@ export interface LocalModelOption {
   size: string;
   /** q4 量化权重近似体积 */
   approxSize: string;
+  /**
+   * q4 权重的实际字节数（用于判定能否走 WebGPU）。
+   *
+   * ⚠️ 必须是**实际值**而非估算 —— 下面这个阈值判断是精确的分界线：
+   * GPU 的 `maxBufferSize` 是 2 GiB，而 ORT 的 WebGPU EP 会把整个权重
+   * 分配成**单个** GPU buffer（不分块），所以权重 + 激活/工作区
+   * 一旦越过 2 GiB 就会分配失败，表现为 wasm 侧 abort（一个裸指针数字）。
+   *
+   * 实测（NVIDIA Lovelace / RTX 40 系，maxBufferSize = 2147483648）：
+   *   onnx-community/Qwen2.5-0.5B-Instruct  q4 = 786156820 (749 MB) → ✅ 成功
+   *   Xenova/Qwen1.5-0.5B-Chat             q4 = 832860847 (794 MB) → ✅ 成功
+   *   onnx-community/Qwen2.5-1.5B-Instruct  q4 = 1787566590 (1.7 GB) → ❌ 失败
+   *
+   * 阈值取 1 GiB 是保守留余量：1 GiB 以内的模型在 WebGPU 上都验证过可用，
+   * 超过则直接引导到 WASM，避免用户白等几分钟下载完才发现加载不了。
+   */
+  q4Bytes?: number;
   /** 简介 */
   desc: string;
   /** 聊天模板族 */
   family: ModelFamily;
   /** 推荐给新用户 */
   recommended?: boolean;
+}
+
+/**
+ * WebGPU 可承载的 q4 权重上限（字节）。
+ *
+ * 依据：GPU `maxBufferSize` = 2 GiB，ORT WebGPU EP 单 buffer 分配整个权重，
+ * 留一半余量给激活值、KV cache 与工作区。实测 794 MB 通过、1.7 GB 失败，
+ * 故把红线设在 1 GiB —— 该线以内都验证过可用。
+ */
+export const WEBGPU_MAX_Q4_BYTES = 1024 * 1024 * 1024;
+
+/**
+ * 判断该模型能否走 WebGPU。
+ *
+ * 未知体积（q4Bytes 缺失）时返回 true —— 宁可试一把，
+ * 因为多数模型都在阈值内；只有明确超限才提前拦下。
+ *
+ * 传入 undefined（模型不在清单里）同样按「不拦」处理。
+ */
+export function canUseWebGpu(m: LocalModelOption | undefined): boolean {
+  if (!m || m.q4Bytes === undefined) return true;
+  return m.q4Bytes <= WEBGPU_MAX_Q4_BYTES;
 }
 
 /** 默认模型 —— 体积小、中文能力够用 */
@@ -42,6 +81,7 @@ export const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
     name: 'Qwen1.5 0.5B Chat',
     size: '0.5B',
     approxSize: '约 400 MB',
+    q4Bytes: 832860847,
     desc: '阿里通义千问 1.5 代轻量版，中文表现均衡，最省流量与内存',
     family: 'qwen',
     recommended: true,
@@ -51,6 +91,7 @@ export const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
     name: 'SmolLM2 360M Instruct',
     size: '360M',
     approxSize: '约 290 MB',
+    q4Bytes: 417375737,
     desc: '体积最小的推荐选项，适合低配设备与首次尝鲜',
     family: 'smol',
   },
@@ -59,6 +100,7 @@ export const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
     name: 'Qwen3 0.6B',
     size: '0.6B',
     approxSize: '约 480 MB',
+    q4Bytes: 919096585,
     desc: '通义千问 3 代轻量版，推理与代码能力优于 1.5 代',
     family: 'qwen',
   },
@@ -67,6 +109,7 @@ export const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
     name: 'Qwen2.5 0.5B Instruct',
     size: '0.5B',
     approxSize: '约 400 MB',
+    q4Bytes: 786156820,
     desc: '通义千问 2.5 代轻量版，指令遵循更稳定',
     family: 'qwen',
   },
@@ -75,7 +118,8 @@ export const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
     name: 'Qwen2.5 1.5B Instruct',
     size: '1.5B',
     approxSize: '约 1 GB',
-    desc: '同代中更大参数，写作与长文本质量更好，需较多内存',
+    q4Bytes: 1787566590,
+    desc: '同代中更大参数，写作与长文本质量更好，需较多内存；权重超出 GPU 缓冲上限，仅支持 WASM 推理',
     family: 'qwen',
   },
 ];

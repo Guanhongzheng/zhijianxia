@@ -18,6 +18,8 @@
  * 故 WebGPU 走 fp16，WASM 走 q4（体积小、无精度依赖）。
  */
 
+import { WEBGPU_MAX_Q4_BYTES } from './local-models';
+
 /** 用户可选择的运行时偏好 */
 export type RuntimePref = 'auto' | 'webgpu' | 'wasm';
 
@@ -52,6 +54,40 @@ export type RuntimeDevice = 'webgpu' | 'wasm';
  * 且部分算子在 WebGPU EP 上不受支持。
  */
 export type RuntimeDtype = 'q4f16' | 'q4';
+
+/**
+ * ⚠️ 关于**大模型在 WebGPU 上加载失败**（实测结论）
+ *
+ * 现象：Qwen2.5-1.5B（q4 权重 1.7 GB）在 WebGPU EP 上加载失败，
+ * 报一个无法解读的裸数字（如 3587054648 = 0xd5ce1c38）。
+ *
+ * 定位过程（对照组见下方表格）：
+ * - 那个数字**不是** ORT 状态码，而是 wasm 堆上的指针 ——
+ *   所有历史错误码（999335224 / 130907384 / 1003122552）低字节都是 0x8，
+ *   即 8 字节对齐的指针。ORT 抛出的是「错误消息字符串的地址」，
+ *   JS 侧拿不到 Error 对象，于是只剩下一个数字。
+ * - 打开 `logSeverityLevel: 0`（verbose）后能看到 C++ 侧日志停在
+ *   「Adding default CPU execution provider」，**从未出现**
+ *   「Adding WebGPU execution provider」—— 失败发生在 EP 挂载阶段。
+ * - 关键对照：**同架构、同精度、同后端**，只换模型大小：
+ *
+ *   | 模型 | q4 字节数 | WebGPU 结果 |
+ *   |------|-----------|-------------|
+ *   | onnx-community/Qwen2.5-0.5B-Instruct | 786156820 (749 MB) | ✅ 62s 成功 |
+ *   | Xenova/Qwen1.5-0.5B-Chat | 832860847 (794 MB) | ✅ 61s 成功 |
+ *   | onnx-community/Qwen2.5-1.5B-Instruct | 1787566590 (1.7 GB) | ❌ 裸数字失败 |
+ *
+ *   同一仓库 → 排除「仓库/算子/量化方案」因素；只有体积不同。
+ * - 机制：本机 GPU 的 `maxBufferSize` = **2147483648（正好 2 GiB）**，
+ *   而 ORT 的 WebGPU EP 把整个权重分配成**单个** GPU buffer（不分块），
+ *   EP 的可配项里也只有 `preferredLayout`，**没有**分块/分页的开关。
+ *   1.7 GB 权重 + 激活值 + 工作区越过 2 GiB → 分配失败 → wasm abort → 裸指针。
+ *
+ * 结论：**这是 GPU 缓冲上限，不是精度不兼容，也不是显卡不支持。**
+ * 因此不能靠换精度解决（q4f16 同样失败，已实测），只能改用 WASM 后端。
+ * 应用层的处理：加载前按体积判断，超限则直接走 WASM，
+ * 免得用户白等几分钟把 1.7 GB 下载完才发现加载不了。
+ */
 
 /** 运行时探测结果 */
 export interface RuntimeInfo {
@@ -97,6 +133,8 @@ export function saveRuntimePref(pref: RuntimePref) {
 
 /** 探测结果缓存 —— WebGPU 能力在页面生命周期内不会变，无需反复问 GPU */
 let cached: RuntimeInfo | null = null;
+/** 缓存对应的模型体积（字节）—— 0 表示「与体积无关的通用探测」 */
+let cachedKey = -1;
 
 /** 探测 WebGPU 能力（不含偏好决策） */
 async function probeWebGpu(): Promise<{
@@ -270,8 +308,19 @@ export async function resolveRuntime(
   pref?: RuntimePref,
   force = false,
   deep = false,
+  /** 待加载模型的 q4 权重字节数 —— 用于判断能否走 WebGPU（见上方实测结论） */
+  modelQ4Bytes?: number,
 ): Promise<RuntimeInfo> {
-  if (cached && !force && pref === undefined) return cached;
+  // ⚠️ 缓存必须把「模型体积」也纳入key。
+  //
+  // 探测结果（有没有 GPU、能不能建device）与模型无关，但「这个模型能不能走
+  // WebGPU」与体积强相关。若缓存只按 pref 命中，就会出现：
+  //   先加载 0.5B（缓存 = webgpu）→ 再加载 1.5B → 直接复用旧缓存，
+  //   于是又去 WebGPU 上撞 2 GiB 缓冲上限。
+  const cacheKey = modelQ4Bytes ?? 0;
+  if (cached && !force && pref === undefined && cachedKey === cacheKey) {
+    return cached;
+  }
 
   const effectivePref = pref ?? readRuntimePref();
   const probe = await probeWebGpu();
@@ -285,6 +334,18 @@ export async function resolveRuntime(
     if (!smoke.ok) {
       webgpuUsable = false;
       smokeReason = smoke.reason;
+    }
+  }
+
+  // 权重体积超过 GPU 单缓冲上限 → 必然加载失败，直接改走 WASM。
+  // 放在这里（而不是等失败后降级）是因为失败发生在下载完 1.7GB 之后，
+  // 让用户白等几分钟才看到失败，体验极差。
+  let sizeBlocked = false;
+  if (webgpuUsable && modelQ4Bytes !== undefined) {
+    if (modelQ4Bytes > WEBGPU_MAX_Q4_BYTES) {
+      webgpuUsable = false;
+      sizeBlocked = true;
+      smokeReason = `权重 ${(modelQ4Bytes / 1024 / 1024).toFixed(0)} MB 超过 GPU 单缓冲上限 ${(WEBGPU_MAX_Q4_BYTES / 1024 / 1024).toFixed(0)} MB`;
     }
   }
 
@@ -302,9 +363,11 @@ export async function resolveRuntime(
     } else {
       device = 'wasm';
       dtype = 'q4';
-      fallbackReason = probe.hasWebGpuApi
-        ? `WebGPU 不可用（${smokeReason ?? '未能获取可用的 GPU 适配器'}），已回退到 WASM`
-        : '当前浏览器不支持 WebGPU，已回退到 WASM';
+      fallbackReason = sizeBlocked
+        ? `该模型${smokeReason}，已自动改用 WASM 推理（CPU，速度较慢但稳定）`
+        : probe.hasWebGpuApi
+          ? `WebGPU 不可用（${smokeReason ?? '未能获取可用的 GPU 适配器'}），已回退到 WASM`
+          : '当前浏览器不支持 WebGPU，已回退到 WASM';
     }
   } else if (effectivePref === 'wasm') {
     device = 'wasm';
@@ -314,7 +377,9 @@ export async function resolveRuntime(
     device = webgpuUsable ? 'webgpu' : 'wasm';
     dtype = 'q4';
     if (!webgpuUsable && smokeReason) {
-      fallbackReason = `WebGPU 冒烟测试未通过（${smokeReason}），已使用 WASM`;
+      fallbackReason = sizeBlocked
+        ? `该模型${smokeReason}，已自动改用 WASM 推理`
+        : `WebGPU 冒烟测试未通过（${smokeReason}），已使用 WASM`;
     }
   }
 
@@ -327,7 +392,10 @@ export async function resolveRuntime(
   };
 
   // 带显式 pref 的调用不写缓存，避免污染全局状态
-  if (pref === undefined) cached = info;
+  if (pref === undefined) {
+    cached = info;
+    cachedKey = cacheKey;
+  }
   return info;
 }
 
@@ -339,4 +407,5 @@ export function peekRuntime(): RuntimeInfo | undefined {
 /** 清除缓存（测试用） */
 export function __resetRuntimeCache() {
   cached = null;
+  cachedKey = -1;
 }

@@ -389,11 +389,99 @@ async function req(path, { method = 'GET', body, token } = {}) {
 
   // 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session。
   // 必须在加载模型前做冒烟测试，否则会在下载完权重后才炸出裸数字。
+  //
+  // ⚠️ 第四个参数是模型体积 —— 权重超过 GPU 单缓冲上限时必须提前改走 WASM，
+  // 否则用户要白等几分钟把 1.7GB 下载完才发现 WebGPU 装不下。
   check(
     /smokeTestWebGpu/.test(rtSrc2) &&
-      /resolveRuntime\(\s*undefined,\s*false,\s*true\s*\)/.test(engineSrc),
-    '加载模型前执行 WebGPU 冒烟测试（deep=true）',
-    '冒烟测试已接入加载流程'
+      /resolveRuntime\(\s*undefined,\s*false,\s*true\s*,\s*modelOption\?\.q4Bytes\s*\)/.test(
+        engineSrc,
+      ),
+    '加载模型前执行 WebGPU 冒烟测试（deep=true），并传入模型体积用于 WebGPU 可行性判定',
+    '冒烟测试已接入加载流程，且带上了模型体积'
+  );
+
+  // ---------- WebGPU 大模型：按权重体积提前拦截 ----------
+  //
+  // 实测（NVIDIA Lovelace，maxBufferSize = 2147483648 = 2 GiB）：
+  //   Qwen2.5-0.5B q4 (749 MB) → WebGPU ✅ 62s
+  //   Qwen1.5-0.5B  q4 (794 MB) → WebGPU ✅ 61s
+  //   Qwen2.5-1.5B  q4 (1.7 GB) → WebGPU ❌ 裸数字失败
+  // 同仓库、同精度、同后端，只差体积 → 是 GPU 单缓冲上限，不是精度不兼容。
+  // ORT 的 WebGPU EP 把整个权重塞进单个 buffer，且 EP 没有分块开关，
+  // 因此只能按体积提前改走 WASM。
+  const modelsSrc = readFileSync(
+    new URL('../src/lib/ai/local-models.ts', import.meta.url),
+    'utf8',
+  );
+  check(
+    /WEBGPU_MAX_Q4_BYTES/.test(modelsSrc) &&
+      /canUseWebGpu/.test(modelsSrc) &&
+      /q4Bytes/.test(modelsSrc) &&
+      /modelQ4Bytes\s*>\s*WEBGPU_MAX_Q4_BYTES/.test(rtSrc2) &&
+      /sizeBlocked/.test(rtSrc2),
+    'WebGPU 按权重体积拦截：超过 GPU 单缓冲上限的模型提前改走 WASM（不再等下载完才失败）',
+    '体积阈值判定已接入 resolveRuntime'
+  );
+
+  // ---------- 下载 / 加载分离 ----------
+  //
+  // 旧实现把两者合成一个「下载并加载」按钮，用户无法预先知道权重在不在本地。
+  // 现在：模型行内有独立「下载」按钮，已下载的显示「已下载」标记，
+  // 加载按钮只在权重就绪时可点。
+  const dlSrc = readFileSync(
+    new URL('../src/lib/ai/model-download.ts', import.meta.url),
+    'utf8',
+  );
+  const dlrSrc = readFileSync(
+    new URL('../src/lib/ai/model-downloader.ts', import.meta.url),
+    'utf8',
+  );
+  const panelSrc = readFileSync(
+    new URL('../src/components/cards/settings-panel.tsx', import.meta.url),
+    'utf8',
+  );
+  check(
+    /transformers-cache/.test(dlSrc) &&
+      /isModelDownloaded/.test(dlSrc) &&
+      /getAllDownloadStates/.test(dlSrc) &&
+      /modelCache\.put/.test(dlrSrc) &&
+      /modelCache\.match/.test(dlrSrc) &&
+      /downloadModel/.test(dlrSrc) &&
+      /已下载/.test(panelSrc) &&
+      /downloadModel\(/.test(panelSrc) &&
+      /getAllDownloadStates/.test(panelSrc),
+    '下载与加载分离：独立「下载」按钮 + 「已下载」标记，且下载写入模型缓存供加载复用',
+    '下载状态检测与独立下载按钮已就位'
+  );
+
+  // ---------- 模型缓存必须分片 ----------
+  //
+  // ⚠️ 极重要：Chrome 的 Cache API 单条目上限约 256MB
+  // （实测 200MB 通过、256MB 失败，总配额 10GB 不是瓶颈）。
+  // 清单里的模型权重最小 417MB、最大 1.78GB —— 全部超限。
+  // 而 Transformers.js 写缓存时是 `cache.put(...).catch(warn)` —— **失败被静默吞掉**，
+  // 于是缓存里从来没有权重，每次加载都重新下载几百 MB～1.8 GB。
+  //
+  // 因此必须用自己的分片缓存（每片 ≤ 64MB），并通过 env.useCustomCache 交给库使用。
+  //
+  // 另外：分片 key **不能用 fragment（#）** —— Cache API 存/取时都会丢弃 fragment，
+  // 会导致同一文件的所有分片塌缩成一个条目（后写的覆盖先写的）。
+  const cacheSrc = readFileSync(
+    new URL('../src/lib/ai/model-cache.ts', import.meta.url),
+    'utf8',
+  );
+  check(
+    /CHUNK_SIZE\s*=\s*64\s*\*\s*1024\s*\*\s*1024/.test(cacheSrc) &&
+      /useCustomCache\s*=\s*true/.test(engineSrc) &&
+      /customCache\s*=\s*modelCache/.test(engineSrc) &&
+      /modelCache\.put/.test(dlrSrc) &&
+      /modelCache\.match/.test(dlrSrc) &&
+      // key 用路径而非 fragment
+      /KEY_BASE/.test(cacheSrc) &&
+      !/CHUNK_SUFFIX\s*=\s*'#/.test(cacheSrc),
+    '模型缓存按 64MB 分片并通过 env.useCustomCache 接入（绕开 Chrome 单条目 256MB 上限）',
+    '分片缓存已接入，分片 key 用路径而非 fragment'
   );
 
   // ---------- 主题包：协议制（文件夹制）与内部 ThemePack 的适配 ----------

@@ -4,6 +4,7 @@
  */
 
 import type { TextGenerationPipeline } from '@huggingface/transformers';
+import { modelCache, clearModelCache, listCachedFiles } from './model-cache';
 import {
   DEFAULT_LOCAL_MODEL,
   DEFAULT_MODEL_SOURCE,
@@ -39,6 +40,7 @@ export {
   peekRuntime,
 } from './runtime';
 export type { RuntimeDevice, RuntimeDtype, RuntimeInfo, RuntimePref } from './runtime';
+export { modelCache, clearModelCache, isFileCached, listCachedFiles } from './model-cache';
 
 export type LocalAiStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -488,7 +490,13 @@ export async function loadLocalModel(
   // deep=true：加载模型前做 WebGPU 冒烟测试。
   // 必须做 —— 能拿到 GPU 适配器 ≠ ORT 的 WebGPU 后端能建 session，
   // 不测就会在下载完几百 MB 权重后才炸，而那时抛出的还是无法解读的裸数字。
-  let runtime = await resolveRuntime(undefined, false, true);
+  //
+  // 传入模型体积：权重超过 GPU 单缓冲上限时，ORT 的 WebGPU EP 必然分配失败
+  // （把整个权重塞进一个 buffer，而GPU 的 maxBufferSize 只有 2 GiB），
+  // 此时直接改走 WASM，别让用户白等几分钟下载完才发现加载不了。
+  // 详见 runtime.ts 里「大模型在 WebGPU 上加载失败」的实测结论。
+  const modelOption = findModelOption(modelId);
+  let runtime = await resolveRuntime(undefined, false, true, modelOption?.q4Bytes);
 
   emit({
     status: 'loading',
@@ -507,6 +515,15 @@ export async function loadLocalModel(
 
     // 允许跨域加载模型资源
     env.allowLocalModels = false;
+
+    // **关键**：改用我们自己的分片缓存（IndexedDB 之外的分片 Cache API）。
+    //
+    // Chrome 的 Cache API 单条目上限约 256MB，而模型权重最小 417MB、最大 1.78GB，
+    // 直接存会失败 —— 且 Transformers.js 把 `cache.put` 的失败**静默吞掉**
+    // （只 console.warn），于是缓存里从来没有权重，每次加载都重新下载。
+    // 详见 model-cache.ts 的实测记录。
+    env.useCustomCache = true;
+    env.customCache = modelCache;
 
     // 指向国内模型源（默认阿里巴巴魔搭社区），显著提升下载速度。
     // 魔搭的仓库路径比HF 多一层 models/，且默认分支叫master，
@@ -669,12 +686,16 @@ function orderedSources(primary: ModelSourceOption): ModelSourceOption[] {
 export async function purgeModelCache(modelId?: string): Promise<void> {
   if (typeof window === 'undefined' || !('caches' in window)) return;
   try {
-    const cache = await window.caches.open('transformers-cache');
-    const keys = await cache.keys();
+    // 走分片缓存的删除逻辑 —— 它会连同分片与元信息一起清干净。
+    // 直接按 URL 删原始 key 是不够的：分片 key 带后缀，删不掉。
+    const urls = await listCachedFiles();
     const targets = modelId
-      ? keys.filter((r) => r.url.includes(modelId))
-      : keys;
-    await Promise.all(targets.map((r) => cache.delete(r)));
+      ? urls.filter((u) => u.includes(modelId))
+      : urls;
+    for (const u of targets) {
+      await modelCache.delete(u);
+    }
+    if (!modelId) await clearModelCache();
   } catch {
     /* 缓存不可用时忽略 —— 不影响正常下载 */
   }
