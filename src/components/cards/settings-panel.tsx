@@ -643,6 +643,10 @@ function AiEngineSettings() {
           <p className="text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
             {downloadingId
               ? `正在下载 ${downloadingId.split('/').pop()}… ${Math.round((downloadProgress?.ratio ?? 0) * 100)}%${
+                  downloadProgress && downloadProgress.total > 0
+                    ? ` · ${(downloadProgress.loaded / 1024 / 1024).toFixed(0)} / ${(downloadProgress.total / 1024 / 1024).toFixed(0)} MB`
+                    : ''
+                }${
                   downloadProgress?.speed
                     ? ` · ${(downloadProgress.speed / 1024 / 1024).toFixed(1)} MB/s`
                     : ''

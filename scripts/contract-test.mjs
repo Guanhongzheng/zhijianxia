@@ -455,6 +455,28 @@ async function req(path, { method = 'GET', body, token } = {}) {
     '下载状态检测与独立下载按钮已就位'
   );
 
+  // ---------- 下载进度百分比必须真的会推进 ----------
+  //
+  // ⚠️ 这里踩过两个坑，都会让进度显示成 0% 或离谱值：
+  // 1. 魔搭的 HEAD 响应**不带 content-length** → 总量算成 0 → 恒 0%；
+  // 2. 用 `Range: bytes=0-0` 再读 `Content-Range` —— 但该头**不在 CORS
+  //    安全响应头白名单**，跨域读到 null，回退的 content-length 又是
+  //    「本次 Range 的长度（1 字节）」→ 分母算成 5 字节 → 百分比上千万%。
+  //
+  // 正确做法：普通 GET 读 content-length（它在 CORS 白名单里），随即 cancel 正文。
+  check(
+    /probeFileSize/.test(dlrSrc) &&
+      /content-length/.test(dlrSrc) &&
+      // 不能用 HEAD 探测（注意只查代码用法，注释里提到 HEAD 是允许的）
+      !/method:\s*'HEAD'/.test(dlrSrc) &&
+      // 不能依赖 Content-Range（跨域读不到）
+      !/\.get\(\s*['"]content-range['"]\s*\)/i.test(dlrSrc) &&
+      // 进度比例必须夹取，防止探测值与实际不符时出现 >100%
+      /clampRatio/.test(dlrSrc),
+    '下载进度百分比能正常推进：用 GET 的 content-length 探测大小（不用 HEAD / Content-Range）并夹取比例',
+    '大小探测与比例夹取已就位'
+  );
+
   // ---------- 模型缓存必须分片 ----------
   //
   // ⚠️ 极重要：Chrome 的 Cache API 单条目上限约 256MB

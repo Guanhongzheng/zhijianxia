@@ -26,7 +26,7 @@
 
 import { findModelSource, type LocalModelOption } from './local-models';
 import { invalidateDownloadState } from './model-download';
-import { modelCache } from './model-cache';
+import { getCachedFileSize, modelCache } from './model-cache';
 
 /** Transformers.js 的浏览器缓存名（须与库内部一致） */
 const CACHE_NAME = 'transformers-cache';
@@ -92,6 +92,53 @@ function buildUrl(
 }
 
 /**
+ * 计算进度比例，夹在 [0, 1]。
+ *
+ * 夹取不是为了好看：探测到的文件大小若与实际下载量有出入
+ * （比如上游文件刚更新过），不夹就会出现 1400% 这种离谱数字。
+ */
+function clampRatio(loaded: number, total: number, fallback = 0): number {
+  if (!total || total <= 0) return fallback;
+  return Math.min(1, Math.max(0, loaded / total));
+}
+
+/**
+ * 探测某个文件的字节数。
+ *
+ * ## 踩过的坑
+ *
+ * 1. **不能用 HEAD** —— 魔搭的 HEAD 响应**根本不带 content-length**
+ *    （实测 `HEAD → 200` 但无该头），于是总量算成 0，
+ *    进度百分比永远是 0%（而速度正常，因为速度是独立算的）。
+ * 2. **也不能用 `Range: bytes=0-0` 去读 `Content-Range`** ——
+ *    `Content-Range` **不在 CORS 安全响应头白名单里**，跨域读出来是 null；
+ *    于是回退到 `content-length`，而 Range 响应的 content-length 是
+ *    **本次请求的长度（1 字节）**，不是文件总长 →
+ *    5 个文件各 1 字节，分母算成 5 字节，百分比飙到上千万%。
+ *
+ * ## 正确做法
+ *
+ * 普通 `GET` —— 响应头一到就能读到 `content-length`
+ * （`Content-Length` **在** CORS 安全响应头白名单里，跨域可读），
+ * 随即 `cancel()` 掉正文，只取元信息不下载内容。
+ */
+async function probeFileSize(url: string, signal?: AbortSignal): Promise<number> {
+  try {
+    const res = await fetch(url, { signal });
+    if (!res.ok) {
+      void res.body?.cancel?.().catch(() => {});
+      return 0;
+    }
+    const len = Number(res.headers.get('content-length'));
+    // 立刻取消正文 —— 只为拿长度，不真下载
+    void res.body?.cancel?.().catch(() => {});
+    return Number.isFinite(len) && len > 0 ? len : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * 下载一个模型的所有必要文件到浏览器缓存。
  *
  * 已在缓存里的文件会跳过（所以重复点「下载」不会重新拉流量）。
@@ -113,24 +160,24 @@ export async function downloadModel(
 
   const t0 = Date.now();
 
-  // 先探明各文件大小，用于算总体进度
-  const plan: { filename: string; url: string; size: number }[] = [];
-  for (const filename of REQUIRED_FILES) {
-    const url = buildUrl(model.id, filename, sourceId);
-    let size = 0;
-    try {
-      const head = await fetch(url, { method: 'HEAD', signal });
-      if (head.ok) {
-        const len = head.headers.get('content-length');
-        if (len) size = Number(len);
-      }
-    } catch {
-      // HEAD 失败不影响后续 GET
-    }
-    plan.push({ filename, url, size });
+  // 先探明各文件大小，用于算总体进度。
+  // 并发探测 —— 每个只是 1 字节的 Range 请求，很快。
+  const plan: { filename: string; url: string; size: number }[] = await Promise.all(
+    REQUIRED_FILES.map(async (filename) => {
+      const url = buildUrl(model.id, filename, sourceId);
+      return { filename, url, size: await probeFileSize(url, signal) };
+    }),
+  );
+
+  // 兜底：万一探测失败（服务端不支持 Range 且不给 content-length），
+  // 至少用模型清单里记录的 q4 权重实际大小估算，
+  // 否则进度分母为 0，百分比会一直显示 0%。
+  const onnxItem = plan.find((p) => p.filename.startsWith('onnx/'));
+  if (onnxItem && onnxItem.size === 0 && model.q4Bytes) {
+    onnxItem.size = model.q4Bytes;
   }
 
-  const totalBytes = plan.reduce((s, p) => s + (p.size || 0), 0);
+  const totalBytes = plan.reduce((s, p) => s + p.size, 0);
   let doneBytes = 0;
 
   const downloaded: string[] = [];
@@ -138,15 +185,18 @@ export async function downloadModel(
   for (const item of plan) {
     if (signal?.aborted) throw new DOMException('下载已取消', 'AbortError');
 
-    // 已缓存则跳过
+    // 已缓存则跳过。
+    // ⚠️ 取大小要读**元信息**，绝不能用 `match().blob().size` ——
+    // 那会把整个文件（最大 1.8GB）读进内存，只为拿个数字。
     const hit = await modelCache.match(item.url);
     if (hit) {
-      doneBytes += item.size || (await hit.blob()).size;
+      const cachedSize = (await getCachedFileSize(item.url)) || item.size;
+      doneBytes += cachedSize;
       onProgress?.({
         file: item.filename,
         loaded: doneBytes,
         total: totalBytes,
-        ratio: totalBytes ? doneBytes / totalBytes : 0,
+        ratio: clampRatio(doneBytes, totalBytes),
       });
       downloaded.push(item.filename);
       continue;
@@ -188,7 +238,7 @@ export async function downloadModel(
             file: item.filename,
             loaded: doneBytes + offset,
             total: totalBytes,
-            ratio: totalBytes ? (doneBytes + offset) / totalBytes : 0,
+            ratio: clampRatio(doneBytes + offset, totalBytes),
             speed: elapsed > 0.5 ? Math.round(offset / elapsed) : 0,
           });
         }
@@ -209,7 +259,7 @@ export async function downloadModel(
             file: item.filename,
             loaded: doneBytes + received,
             total: totalBytes,
-            ratio: totalBytes ? (doneBytes + received) / totalBytes : 0,
+            ratio: clampRatio(doneBytes + received, totalBytes),
             speed: elapsed > 0.5 ? Math.round(received / elapsed) : 0,
           });
         }
@@ -251,7 +301,7 @@ export async function downloadModel(
       file: item.filename,
       loaded: doneBytes,
       total: totalBytes,
-      ratio: totalBytes ? doneBytes / totalBytes : 1,
+      ratio: clampRatio(doneBytes, totalBytes, 1),
     });
   }
 

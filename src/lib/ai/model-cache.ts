@@ -259,6 +259,25 @@ export async function isFileCached(url: string): Promise<boolean> {
   return (await cache.match(metaKey(url))) !== undefined;
 }
 
+/**
+ * 查某个已缓存文件的字节数（只读元信息，不读正文）。
+ *
+ * ⚠️ 千万别用 `match(url).blob().size` 来取大小 ——
+ * 那会把整个文件（最大 1.8GB）读进内存，只是为了拿个数字。
+ */
+export async function getCachedFileSize(url: string): Promise<number> {
+  const cache = await openCache();
+  if (!cache) return 0;
+  const metaRes = await cache.match(metaKey(url));
+  if (!metaRes) return 0;
+  try {
+    const meta = (await metaRes.json()) as ChunkMeta;
+    return meta.size ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** 列出已缓存的所有逻辑文件 URL */
 export async function listCachedFiles(): Promise<string[]> {
   return modelCache.keys();
