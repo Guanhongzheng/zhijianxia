@@ -578,7 +578,7 @@ export default { manifest, Component };`}
                 </div>
               )}
 
-              <div className="rounded-md border border-[var(--zj-border)] p-3 text-[0.75rem] leading-relaxed text-[var(--zj-muted-fg)]">
+              <div className="zj-surface p-3 text-[0.75rem] leading-relaxed text-[var(--zj-muted-fg)]">
                 插件与内核完全解耦，可独立打包导出为 .plugin 文件分享给他人导入使用。
                 导入时会校验版本与内核兼容性，不兼容的插件将被拒绝加载。
               </div>
@@ -609,7 +609,7 @@ export default { manifest, Component };`}
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-[var(--zj-border)] px-2.5 py-2">
+    <div className="zj-surface px-2.5 py-2">
       <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">{label}</p>
       <p className="mt-0.5 text-xs">{value}</p>
     </div>

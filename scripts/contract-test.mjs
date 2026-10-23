@@ -3,7 +3,7 @@
  * 直接打后端，断言「后端真实返回结构」与「前端适配层期望结构」一致。
  * 这是本次崩溃（avatarColor 读取 undefined.length）的根因防线。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const BASE = process.env.ZJ_API || 'http://localhost:8787';
 
@@ -1003,6 +1003,44 @@ async function req(path, { method = 'GET', body, token } = {}) {
     abyss?.scheme === 'dark' && pureLight?.scheme === 'light',
     'scheme 判定正确：声明 dark 的深空琉璃为 dark，纯白主题为 light',
     `abyss=${abyss?.scheme} pure-light=${pureLight?.scheme}`,
+  );
+
+  // ---------- 卡片样式必须统一走 .zj-card / .zj-surface ----------
+  //
+  // 主题包只能注入 `--zj-*` 变量与 `<html data-card-*>`，接不到「组件里手写的
+  // `rounded-md border bg-[var(--zj-card)]`」。这种盒子会出现
+  // 「主题切了玻璃/描边/无边框，但有些地方没变」—— 正是要防的回归。
+  // 所以这里直接扫源码文本：组件层不许再出现手写的边框盒子。
+  //
+  // 例外：胶囊与圆点指示器（`rounded-full`）本来就是形状的一部分，不算卡片。
+  const componentRoot = new URL('../src/components/', import.meta.url);
+  const walk = (dirUrl) => {
+    const out = [];
+    for (const entry of readdirSync(dirUrl, { withFileTypes: true })) {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dirUrl);
+      if (entry.isDirectory()) {
+        // ui/ 是原子组件（input/select/dialog），本就该自己调样式
+        if (entry.name === 'ui') continue;
+        out.push(...walk(child));
+      } else if (entry.name.endsWith('.tsx')) {
+        out.push(child);
+      }
+    }
+    return out;
+  };
+  const handRolled = [];
+  for (const fileUrl of walk(componentRoot)) {
+    const text = readFileSync(fileUrl, 'utf8');
+    text.split('\n').forEach((line, idx) => {
+      if (!line.includes('border border-[var(--zj-border)]')) return;
+      if (line.includes('rounded-full')) return;
+      handRolled.push(`${fileUrl.pathname.split('/').pop()}:${idx + 1}`);
+    });
+  }
+  check(
+    handRolled.length === 0,
+    '卡片/容器样式统一走 .zj-card / .zj-surface（组件层无手写边框盒子）',
+    handRolled.slice(0, 3).join(', ') || '无手写盒子',
   );
 
   // 每个主题都必须能导出成智简匣可导入的 .theme 信封

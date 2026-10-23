@@ -223,6 +223,18 @@ body {
 }
 
 /* 扁平卡片：统一语言，无厚重拟物阴影 */
+/**
+ * 卡片样式的**唯一入口**。
+ *
+ * 主题包通过 `--zj-*` 变量与 `<html data-card-*>` 控制外观，前提是所有"卡片感"
+ * 的表面都用这里定义的类，而不是各自拼 `rounded-md border bg-[var(--zj-card)]`。
+ * 自己拼的盒子接不到 `data-card-style`（玻璃/描边/投影/强调条）—— 这就是
+ * 「主题改了但有些地方没变」的根因。
+ *
+ * - `.zj-card`    外层卡片：有背景、边框、圆角、投影，吃全部卡片风格变量
+ * - `.zj-card-soft`  外层卡片但背景半透明（正文里的工具卡等，避免糊住底层）
+ * - `.zj-surface` 内层容器：卡片里的分区/选项行，透明底 + 边框 + 小一档圆角
+ */
 .zj-card {
   background-color: var(--zj-card);
   border: 1px solid var(--zj-border);
@@ -230,10 +242,27 @@ body {
   box-shadow: var(--zj-shadow);
 }
 
-.zj-card-flat {
-  background-color: var(--zj-card);
+/** 外层卡片 · 半透明底（用于正文流里的卡片，保留底层纹理） */
+.zj-card-soft {
+  background-color: color-mix(in srgb, var(--zj-card) 70%, transparent);
+}
+
+/**
+ * 内层容器。
+ *
+ * 默认**不设背景**：绝大多数内层盒子本来就和卡片同底，强行上色会显得厚重；
+ * 也避免 `.zj-surface` 的背景规则压过 `bg-[var(--zj-muted)]` 这类工具类
+ * （同为单类选择器，胜负看顺序，靠不住）。
+ * 需要底色时用 `.zj-surface-tint`，主题包可设 `--zj-surface-bg` 统一改。
+ * 圆角取 `--radius-md`（主题圆角的 75%），与手写 `rounded-md` 时期的视觉一致。
+ */
+.zj-surface {
   border: 1px solid var(--zj-border);
-  border-radius: var(--zj-radius);
+  border-radius: var(--radius-md);
+}
+
+.zj-surface-tint {
+  background-color: var(--zj-surface-bg, color-mix(in srgb, var(--zj-card) 55%, transparent));
 }
 
 /* ============================================================
@@ -276,6 +305,10 @@ html[data-card-style='outline'] .zj-card {
   box-shadow: none;
 }
 
+html[data-card-style='outline'] .zj-card-soft {
+  background-color: transparent;
+}
+
 html[data-card-style='glass'] .zj-card {
   background-color: color-mix(
     in srgb,
@@ -286,8 +319,15 @@ html[data-card-style='glass'] .zj-card {
   -webkit-backdrop-filter: blur(var(--zj-card-blur, 14px)) saturate(140%);
 }
 
-/* 卡片边框宽度（0 = 无边框） */
-html[data-card-border-width='0'] .zj-card {
+/* 玻璃态下，半透明卡片就不用再叠一层半透明了 */
+html[data-card-style='glass'] .zj-card-soft {
+  backdrop-filter: blur(var(--zj-card-blur, 14px)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--zj-card-blur, 14px)) saturate(140%);
+}
+
+/* 卡片边框宽度（0 = 无边框）—— 内外层一起生效，否则会出现"外框没了、里框还在" */
+html[data-card-border-width='0'] .zj-card,
+html[data-card-border-width='0'] .zj-surface {
   border-width: 0;
 }
 

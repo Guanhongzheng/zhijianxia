@@ -164,7 +164,7 @@ zhijianxia/
 >    现已改为「先快照、`try/finally` 还原、并断言还原成功」，body 不带 apiKey 故不碰 Key。
 >    实测：先把配置改成哨兵值（deepseek/45000/0.3）→ 跑测试 → 配置逐字段仍是哨兵值。
 >
-> 现 **71/71**（新增 scheme 字段两项、契约不留副作用、GPU 预算按限额计算）。
+> 现 **72/72**（scheme 两项、契约不留副作用、GPU 预算、卡片样式守卫）。
 >
 > **另外已完成**：列表通道补上 `scheme`（原待办 3）。`theme.json` 的 scheme 优先，
 > 未声明则按 `--bg` 亮度推断（阈值 0.4 与前端 `protocol.ts` 一致，
@@ -198,7 +198,7 @@ npm run server                 # → http://127.0.0.1:8787
 
 ```bash
 npm run typecheck              # tsc，约 20s
-npm run contract               # 契约测试，约 10s，当前 71/71
+npm run contract               # 契约测试，约 10s，当前 72/72
 npm run theme:search           # 意图搜索 24 项，约 1s（纯函数，不依赖前后端）
 npm run ai:budget              # GPU 权重预算 12 项，约 1s（纯函数）
 npm run theme:security         # 路径穿越 17 项，约 5s
@@ -403,6 +403,26 @@ server/packages/themes/<slug>/
 **导入闭环**：`/api/themes/:slug/theme-file` 导出 `.theme` 信封 →
 「设置 · 个性化 → 导入 .theme」→ `themePackOf` → 应用。链路已验证通。
 
+### 卡片样式的唯一入口（改 UI 必读）
+
+主题包只能注入 `--zj-*` 变量与 `<html data-card-*>`，**接不到组件里手写的
+`rounded-md border bg-[var(--zj-card)]`**。所以卡片/容器一律用这三个类
+（定义在 `globals.css`），不要自己拼：
+
+| 类 | 用途 | 吃哪些主题能力 |
+| --- | --- | --- |
+| `.zj-card` | 外层卡片（广场卡片、面板、会话区） | 背景 / 边框 / 圆角 / 投影 + 玻璃、描边、flat、强调条、无边框 |
+| `.zj-card-soft` | 外层卡片但背景 70% 半透明（正文里的工具卡） | 同上（玻璃态下不再叠半透明，直接加模糊） |
+| `.zj-surface` | 内层容器（设置项、列表行、分区） | 边框 + `--radius-md` + 无边框开关；底色用 `.zj-surface-tint` |
+
+主题包可额外设 `--zj-surface-bg` 统一给内层容器上底色（默认透明）。
+
+守卫：`npm run contract` 里有一条扫描 `src/components/**`（`ui/` 除外）的断言，
+出现手写的 `border border-[var(--zj-border)]` 就 FAIL（`rounded-full` 的胶囊/圆点除外）。
+加这个守卫的原因很具体：手写盒子的边框是 Tailwind 工具类，
+`html[data-card-border-width='0']` 管不到它 —— 表现就是「主题切了无边框，
+但设置页里的框还在」。
+
 ---
 
 ## 8. 接口约定（改代码前必读）
@@ -446,7 +466,7 @@ pipeline，它不支持 function calling。
 
 如果接手后要继续推进，建议：
 
-1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:search` / `theme:security` / `plugins:verify` 应分别是 0 错 / 71/71 / 24/24 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
+1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:search` / `theme:security` / `plugins:verify` 应分别是 0 错 / 72/72 / 24/24 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
 2. **按需推进**：想扩功能就从 §4 表里挑；想优化就先读 §6 相关坑，避免重复踩。
 3. **改完照 §5 从短到长复跑**，注意坑 J（`theme:ws` 会连带停后端）。
 

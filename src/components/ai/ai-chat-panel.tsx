@@ -242,7 +242,7 @@ export function AiChatPanel({ className }: AiChatPanelProps) {
       {/* 消息区 */}
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-[var(--zj-radius)] border border-[var(--zj-border)] bg-[var(--zj-card)]/40 p-4"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto zj-card zj-card-soft p-4"
       >
         {messages.length === 0 ? (
           <div className="space-y-3 py-4">

@@ -373,7 +373,7 @@ export function ApiCapabilitySettings() {
   return (
     <div className="space-y-4">
       {!backendOnline && (
-        <div className="rounded-md border border-[var(--zj-border)] bg-[var(--zj-muted)] px-3 py-2.5 text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
+        <div className="zj-surface bg-[var(--zj-muted)] px-3 py-2.5 text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
           后端服务未开启，API 配置仅保存在浏览器本地；启动后端后即可使用转发调用。
         </div>
       )}

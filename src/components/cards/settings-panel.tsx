@@ -338,7 +338,7 @@ function AiEngineSettings() {
             静默替换会让「我明明选过」变成「怎么又变了」。
           */}
           {assessment && (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--zj-border)] px-2.5 py-2">
+            <div className="flex flex-wrap items-center gap-2 zj-surface px-2.5 py-2">
               <Badge
                 variant={assessment.tier === 'high' ? 'success' : 'outline'}
                 className="shrink-0 text-[0.6875rem]"
@@ -524,7 +524,7 @@ function AiEngineSettings() {
           </div>
 
           {/* 推理运行时：WebGPU / ONNX Runtime Web */}
-          <div className="space-y-2 rounded-md border border-[var(--zj-border)] p-3">
+          <div className="space-y-2 zj-surface p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-medium">推理运行时</p>
               <div className="flex items-center gap-1.5">
@@ -815,7 +815,7 @@ function LanSettings() {
               onChange={(e) => setLan({ port: Number(e.target.value) || 8787 })}
             />
           </div>
-          <div className="flex items-center justify-between rounded-md border border-[var(--zj-border)] px-3 py-2">
+          <div className="flex items-center justify-between zj-surface px-3 py-2">
             <div>
               <p className="text-xs font-medium">自动连接重连</p>
               <p className="text-[0.75rem] text-[var(--zj-muted-fg)]">
@@ -908,7 +908,7 @@ function GeneralSettings() {
             .map((m) => (
               <div
                 key={m.manifest.id}
-                className="flex items-center justify-between rounded-md border border-[var(--zj-border)] px-3 py-2"
+                className="flex items-center justify-between zj-surface px-3 py-2"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-base">{m.manifest.preview}</span>
@@ -949,7 +949,7 @@ function GeneralSettings() {
 function AboutSettings() {
   return (
     <div className="space-y-3 text-xs">
-      <div className="rounded-md border border-[var(--zj-border)] p-4">
+      <div className="zj-surface p-4">
         <p className="text-sm font-medium">智简匣 v1.0.0</p>
         <p className="mt-1.5 leading-relaxed text-[var(--zj-muted-fg)]">
           本地离线 AI 优先的局域网工具箱。前端可独立运行，后端为可选组件，
@@ -957,7 +957,7 @@ function AboutSettings() {
         </p>
       </div>
 
-      <div className="rounded-md border border-[var(--zj-border)] p-4">
+      <div className="zj-surface p-4">
         <p className="mb-2 font-medium">技术栈</p>
         <ul className="space-y-1 text-[var(--zj-muted-fg)]">
           <li>前端：Next.js 16 · React 19 · TypeScript · Tailwind CSS v4</li>
@@ -967,7 +967,7 @@ function AboutSettings() {
         </ul>
       </div>
 
-      <div className="rounded-md border border-[var(--zj-border)] p-4">
+      <div className="zj-surface p-4">
         <p className="mb-2 font-medium">局域网连接说明</p>
         <ol className="list-decimal space-y-1 pl-4 text-[var(--zj-muted-fg)]">
           <li>在后端设备运行 <code>npm run server</code> 启动服务</li>
@@ -977,7 +977,7 @@ function AboutSettings() {
         </ol>
       </div>
 
-      <div className="rounded-md border border-[var(--zj-border)] p-4">
+      <div className="zj-surface p-4">
         <p className="mb-2 font-medium">开源信息</p>
         <p className="text-[var(--zj-muted-fg)]">
           本项目采用 MIT 许可证。插件内核与所有功能插件完全解耦，
@@ -1077,7 +1077,7 @@ function ActionRow({
   loading?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-[var(--zj-border)] px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 zj-surface px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-2.5">
         <span className="shrink-0 text-[var(--zj-muted-fg)]">{icon}</span>
         <div className="min-w-0">

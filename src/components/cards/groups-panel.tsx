@@ -97,7 +97,7 @@ export function GroupsPanel() {
               whileHover={{ y: -1 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setActiveGroup(g)}
-              className="flex items-center gap-3 rounded-md border border-[var(--zj-border)] p-3 text-left transition-colors hover:border-[var(--zj-accent)]"
+              className="flex items-center gap-3 zj-surface p-3 text-left transition-colors hover:border-[var(--zj-accent)]"
             >
               <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--zj-accent-soft)] text-[var(--zj-accent)]">
                 <Users className="size-4" />
@@ -295,7 +295,7 @@ function GroupChatView({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 8 }}
-      className="flex max-h-[52dvh] flex-col rounded-[var(--zj-radius)] border border-[var(--zj-border)]"
+      className="flex max-h-[52dvh] flex-col zj-card"
     >
       {/* 群头部 */}
       <div className="flex items-center justify-between gap-2 border-b border-[var(--zj-border)] px-3.5 py-2.5">

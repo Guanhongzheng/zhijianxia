@@ -77,7 +77,7 @@ export function BackendGate() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-md border border-[var(--zj-border)] bg-[var(--zj-muted)] p-3 text-xs leading-relaxed">
+        <div className="zj-surface bg-[var(--zj-muted)] p-3 text-xs leading-relaxed">
           <p className="mb-1.5 font-medium">启动方式</p>
           <code className="block rounded bg-[var(--zj-card)] px-2 py-1.5 text-[0.75rem]">
             npm run server

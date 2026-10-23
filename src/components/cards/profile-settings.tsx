@@ -163,7 +163,7 @@ export function ProfileSettings() {
       </div>
 
       {/* 账号操作 */}
-      <div className="rounded-md border border-[var(--zj-border)] p-3.5">
+      <div className="zj-surface p-3.5">
         <p className="text-xs font-medium">账号</p>
         <p className="mt-0.5 mb-3 text-[0.75rem] leading-relaxed text-[var(--zj-muted-fg)]">
           退出后需要重新输入昵称与密码登录。本地个性化配置（主题、插件、备忘录）不会丢失。

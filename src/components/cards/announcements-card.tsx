@@ -89,7 +89,7 @@ export function AnnouncementsCard() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col gap-1.5 rounded-md border border-[var(--zj-border)] bg-[var(--zj-bg)] p-3"
+              className="flex flex-col gap-1.5 zj-surface bg-[var(--zj-bg)] p-3"
             >
               <div className="flex items-start justify-between gap-2">
                 <h4 className="text-sm leading-snug font-medium">{notice.title}</h4>

@@ -82,9 +82,8 @@ const FIELD_LABELS: Record<string, string> = {
 /** 参与「结果高亮」的字段顺序（优先展示） */
 const PRIMARY_FIELDS = ['result', 'display', 'date', 'words', 'characters'];
 
-/** 容器 class：所有工具卡片统一外观 */
-const CARD_CLASS =
-  'rounded-[var(--zj-radius)] border border-[var(--zj-border)] bg-[var(--zj-card)]/70 px-3.5 py-3';
+/** 容器 class：所有工具卡片统一走 .zj-card（主题包可全局改） */
+const CARD_CLASS = 'zj-card zj-card-soft px-3.5 py-3';
 
 /* -------------------------------------------------------------------------- */
 /* 各工具的结果视图                                                             */
@@ -262,7 +261,7 @@ function WeeklyReportResult({ output }: { output: ToolOutput }) {
         <button
           type="button"
           onClick={() => void copy()}
-          className="flex items-center gap-1 rounded-md border border-[var(--zj-border)] px-2 py-1 text-[11px] text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
+          className="flex items-center gap-1 zj-surface px-2 py-1 text-[11px] text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
           {copied ? '已复制' : '复制 Markdown'}

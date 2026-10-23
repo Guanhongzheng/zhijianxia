@@ -614,7 +614,7 @@ export function ThemeMarketplacePanel() {
                 </div>
               )}
 
-              <div className="rounded-md border border-[var(--zj-border)] p-3 text-[0.75rem] leading-relaxed text-[var(--zj-muted-fg)]">
+              <div className="zj-surface p-3 text-[0.75rem] leading-relaxed text-[var(--zj-muted-fg)]">
                 主题包可定制应用图标、卡片风格、导航栏风格、配色与壁纸。
                 下载后写入本地缓存，离线也能切换使用。
               </div>
@@ -645,7 +645,7 @@ export function ThemeMarketplacePanel() {
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-[var(--zj-border)] px-2.5 py-2">
+    <div className="zj-surface px-2.5 py-2">
       <p className="text-[0.6875rem] text-[var(--zj-muted-fg)]">{label}</p>
       <p className="mt-0.5 text-xs">{value}</p>
     </div>
