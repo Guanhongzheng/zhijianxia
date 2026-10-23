@@ -27,6 +27,8 @@ export interface PlazaTheme {
   version: string;
   category: string;
   tags: string[];
+  /** 主色调是亮还是暗（作者声明优先，未声明则按背景色亮度推断） */
+  scheme: 'dark' | 'light';
   /** 封面图 URL（相对后端基址；无封面时为空串） */
   coverUrl: string;
   /** 目录内所有文件的字节总和 */

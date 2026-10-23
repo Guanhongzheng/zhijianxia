@@ -152,8 +152,7 @@ zhijianxia/
 | --- | --- | --- | --- |
 | 1 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
 | 2 | **本机 AI 配置自相矛盾** | 中 | 当前 `capabilities.chat.provider=deepseek`，但 `base=https://api.openai.com/v1`、`model=gpt-4o-mini`（后端 chat 的 base/model 读历史键，provider 读 `ai_cap_chat`，两个写入方各改一半就会这样）。**症状**：`hasKey=true` 却对话 401/502，且 OpenAI 域名国内不可达。修法：在「设置 · AI」重选服务商后重填地址，或直接 PUT `{capability:'chat', provider:'deepseek', base:'https://api.deepseek.com/v1', model:'deepseek-chat'}` |
-| 3 | **列表通道缺 `scheme` 字段** | 低 | `theme.json` 有 `scheme`（dark/light），但 `/api/themes` 列表响应没带 → 前端无法按明暗精确筛选，只能靠 tags。补一个字段即可（scanner + 类型 + 测试） |
-| 4 | **AI 引擎升级（7B 目标）** | 中 | 详情见 `docs/AI-RUNTIME-ROADMAP.md`。结论：静态内存规划 / OPFS 流式 / KV 压缩 / 核融合 / GGUF 量化档**全部依赖换引擎**，当前 ORT Web 不提供这些钩子。路径是先抽 `LocalEngine` 接口（行为不变），再接 WebLLM。**待用户拍板三件事**：7B 预期是否下调、是否接受第二套模型格式、是否接受 ≈2 MB 依赖 |
+| 3 | **AI 引擎升级（7B 目标）** | 中 | 详情见 `docs/AI-RUNTIME-ROADMAP.md`。结论：静态内存规划 / OPFS 流式 / KV 压缩 / 核融合 / GGUF 量化档**全部依赖换引擎**，当前 ORT Web 不提供这些钩子。Phase 1（引擎边界）已完成；Phase 2 接 WebLLM。**待用户拍板三件事**：7B 预期是否下调、是否接受第二套模型格式、是否接受 ≈2 MB 依赖 |
 
 > **本轮已修复（原待办 1、4）**
 >
@@ -165,7 +164,14 @@ zhijianxia/
 >    现已改为「先快照、`try/finally` 还原、并断言还原成功」，body 不带 apiKey 故不碰 Key。
 >    实测：先把配置改成哨兵值（deepseek/45000/0.3）→ 跑测试 → 配置逐字段仍是哨兵值。
 >
-> 现 **69/69**（新增「契约测试不留副作用」与「GPU 预算按限额计算」两项）。
+> 现 **71/71**（新增 scheme 字段两项、契约不留副作用、GPU 预算按限额计算）。
+>
+> **另外已完成**：列表通道补上 `scheme`（原待办 3）。`theme.json` 的 scheme 优先，
+> 未声明则按 `--bg` 亮度推断（阈值 0.4 与前端 `protocol.ts` 一致，
+> 判定逻辑单独放在 `server/src/theme-store/scheme.js` 以便测试）。
+> 意图搜索现在把 scheme 当**结构化信号**（+2.2 分，与文本无关），
+> 于是「暗色」不再要求作者把这两个字写进 tags —— 实测墨黛是纸底亮色（light），
+> 深空琉璃是真正的 dark，两者在「暗色」查询里已能正确分层。
 
 ---
 
@@ -187,8 +193,8 @@ npm run server                 # → http://127.0.0.1:8787
 
 ```bash
 npm run typecheck              # tsc，约 20s
-npm run contract               # 契约测试，约 10s，当前 69/69
-npm run theme:search           # 意图搜索 21 项，约 1s（纯函数，不依赖前后端）
+npm run contract               # 契约测试，约 10s，当前 71/71
+npm run theme:search           # 意图搜索 24 项，约 1s（纯函数，不依赖前后端）
 npm run ai:budget              # GPU 权重预算 12 项，约 1s（纯函数）
 npm run theme:security         # 路径穿越 17 项，约 5s
 npm run theme:ws               # WS 推送 3 项，约 15s
@@ -420,7 +426,7 @@ server/packages/themes/<slug>/
 
 如果接手后要继续推进，建议：
 
-1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:search` / `theme:security` / `plugins:verify` 应分别是 0 错 / 69/69 / 21/21 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
+1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:search` / `theme:security` / `plugins:verify` 应分别是 0 错 / 71/71 / 24/24 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
 2. **按需推进**：想扩功能就从 §4 表里挑；想优化就先读 §6 相关坑，避免重复踩。
 3. **改完照 §5 从短到长复跑**，注意坑 J（`theme:ws` 会连带停后端）。
 

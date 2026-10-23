@@ -37,6 +37,11 @@ export interface SearchableTheme {
   tags: string[];
   category?: string;
   author?: string;
+  /**
+   * 亮/暗。这是**结构化字段**，不依赖文本 ——
+   * 有它之后，「暗色」不再需要作者恰好把这两个字写进 tags 才搜得到。
+   */
+  scheme?: 'dark' | 'light';
 }
 
 /** 一个「概念」= 一组同义表达 + 给用户看的短名 */
@@ -194,6 +199,25 @@ const TERM_WEIGHTS = {
  */
 const CONCEPT_CAP = 3.5;
 
+/**
+ * 「暗/亮」这两个概念额外吃到的**结构化加分**。
+ *
+ * 它来自 `theme.scheme`（后端扫描时算好的），与文本无关，因此：
+ * - 一个没在 tags 里写「暗色」的暗色主题，也能被「暗色」搜到；
+ * - 只打了 tag 但主色其实是亮纸底的主题（如墨黛），不会因为
+ *   description 里自称「暗色」就超越真正的暗色主题。
+ *
+ * 加分放在**封顶之外**：否则文本分已经顶到 3.5 的主题，结构化信号会被吞掉。
+ * 权重取 2.2：高于 category(2)、低于 tags(2.5)，避免压过用户明确写下的词。
+ */
+const SCHEME_BONUS = 2.2;
+
+/** 哪些概念可以吃结构化加分 */
+const SCHEME_CONCEPTS: Record<string, 'dark' | 'light'> = {
+  dark: 'dark',
+  light: 'light',
+};
+
 /** 是否纯 ASCII（决定要不要按词边界匹配） */
 const ASCII_ONLY = /^[\x20-\x7e]+$/;
 
@@ -278,8 +302,11 @@ export function scoreTheme(
         sum += CONCEPT_WEIGHTS[field];
       }
     }
-    if (sum > 0) {
-      score += Math.min(sum, CONCEPT_CAP);
+    // 结构化加分：只看 theme.scheme，与文本命中与否无关
+    const wantsScheme = SCHEME_CONCEPTS[concept.id];
+    const schemeHit = wantsScheme !== undefined && theme.scheme === wantsScheme;
+    if (sum > 0 || schemeHit) {
+      score += Math.min(sum, CONCEPT_CAP) + (schemeHit ? SCHEME_BONUS : 0);
       reasons.push(concept.label);
     }
   }

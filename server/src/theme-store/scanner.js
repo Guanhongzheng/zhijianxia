@@ -32,6 +32,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { validateThemePack } = require('../routes/registry-validate');
+const { detectScheme } = require('./scheme');
 
 /** 主题根目录：server/packages/themes */
 const THEMES_DIR = path.join(__dirname, '..', '..', 'packages', 'themes');
@@ -205,8 +206,7 @@ async function listPreviews(themeDir) {
  * 读取并校验单个主题目录。
  * 任何不满足条件的情况都返回 null（调用方负责 warn）。
  */
-async function readTheme(dirPath, slug) {
-  const themeDir = path.join(dirPath, slug);
+async function readTheme(dirPath, slug) {  const themeDir = path.join(dirPath, slug);
 
   // ---- theme.json 必需 ----
   let raw;
@@ -249,6 +249,7 @@ async function readTheme(dirPath, slug) {
     version: typeof json.version === 'string' ? json.version : '0.0.0',
     category: check.data.category,
     tags: Array.isArray(check.data.tags) ? check.data.tags : [],
+    scheme: detectScheme(json),
     coverFile: await findCover(themeDir),
     previews: await listPreviews(themeDir),
     fileSize: await dirSize(themeDir),

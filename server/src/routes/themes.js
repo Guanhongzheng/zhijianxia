@@ -117,6 +117,8 @@ function toListItem(meta) {
     version: meta.version,
     category: meta.category,
     tags: meta.tags,
+    /** 亮/暗 —— 结构化维度，前端据此精确筛选，不必再从 tags 猜 */
+    scheme: meta.scheme,
     coverUrl: meta.coverFile ? `/api/themes/${meta.slug}/cover` : '',
     fileSize: meta.fileSize,
     updatedAt: meta.updatedAt,

@@ -989,6 +989,22 @@ async function req(path, { method = 'GET', body, token } = {}) {
     plazaFirst ? JSON.stringify(Object.keys(plazaFirst)) : '(空)',
   );
 
+  // 亮/暗必须是**结构化字段**：前端不该靠 tags 里有没有「暗色」两个字来猜。
+  // 判定规则：作者声明优先，未声明按 --bg 亮度推断（阈值与前端 protocol.ts 一致）。
+  check(
+    plazaItems.length > 0 &&
+      plazaItems.every((t) => t.scheme === 'dark' || t.scheme === 'light'),
+    '主题列表项含 scheme（dark/light），且取值合法',
+    plazaItems.map((t) => `${t.slug}:${t.scheme}`).join(' '),
+  );
+  const abyss = plazaItems.find((t) => t.slug === 'abyss-glass');
+  const pureLight = plazaItems.find((t) => t.slug === 'pure-light');
+  check(
+    abyss?.scheme === 'dark' && pureLight?.scheme === 'light',
+    'scheme 判定正确：声明 dark 的深空琉璃为 dark，纯白主题为 light',
+    `abyss=${abyss?.scheme} pure-light=${pureLight?.scheme}`,
+  );
+
   // 每个主题都必须能导出成智简匣可导入的 .theme 信封
   if (plazaFirst) {
     const exported = await req(`/api/themes/${encodeURIComponent(plazaFirst.slug)}/theme-file`);

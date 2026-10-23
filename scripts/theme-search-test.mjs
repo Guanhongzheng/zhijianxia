@@ -15,7 +15,13 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { parseQuery, searchThemes } from '../src/lib/theme/search.ts';
+
+// 后端是 CommonJS，这里借 createRequire 拿它的 scheme 判定 ——
+// 让测试语料与真实列表接口用**同一套**亮暗判定，而不是各写一遍亮度公式。
+const require = createRequire(import.meta.url);
+const { detectScheme } = require('../server/src/theme-store/scheme.js');
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const THEMES_DIR = join(ROOT, 'server', 'packages', 'themes');
@@ -36,6 +42,7 @@ function loadThemes() {
       tags: Array.isArray(raw.tags) ? raw.tags : [],
       category: raw.category ?? '',
       author: raw.author ?? '',
+      scheme: detectScheme(raw),
     });
   }
   return themes;
@@ -98,6 +105,29 @@ check(
   !appearsAnywhere('夜景') && top('夜景风格') !== undefined,
   '「夜景」→ 暗色族（多跳同义词）',
   `首项 ${top('夜景风格')}`,
+);
+
+// ========== 2b. 结构化维度：scheme 不依赖文本 ==========
+check(
+  themes.every((t) => t.scheme === 'dark' || t.scheme === 'light'),
+  '每个主题都能判定出亮/暗',
+  themes.map((t) => `${t.slug}:${t.scheme}`).join(' '),
+);
+// 完全不含「暗」字、没有 tags 的主题，仅凭 scheme 也应被「暗色」找到
+const schemeOnly = [
+  { slug: 'no-keyword-dark', name: 'Plain', description: '低调的配色方案', tags: [], scheme: 'dark' },
+  { slug: 'no-keyword-light', name: 'Plain2', description: '低调的配色方案', tags: [], scheme: 'light' },
+];
+const schemeHits = searchThemes(schemeOnly, '暗色');
+check(
+  schemeHits.length === 1 && schemeHits[0].item.slug === 'no-keyword-dark',
+  '仅凭 scheme=dark 就能命中「暗色」（不要求作者把词写进 tags）',
+  schemeHits.map((m) => m.item.slug).join(', ') || '(无)',
+);
+check(
+  top('暗色') === 'abyss-glass',
+  '「暗色」首项是真正的暗色主题（深空琉璃），而非只提过这个词的',
+  all('暗色').join(', '),
 );
 
 // ========== 3. 复合意图：多个概念同时命中应排在最前 ==========
