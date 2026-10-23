@@ -210,6 +210,10 @@ push 到 main / 开 PR / 手动触发时，按「先便宜后昂贵」的顺序�
 2. `plugins:verify` 读 `dist-plugins/*.plugin` 并断言 6 个，而该目录是构建产物，
    干净 checkout 上必须先 `npm run plugins:build`。
 
+现状：全绿，单次约 50 秒（含生产构建 14s）。
+查看入口：仓库 Actions 页 → `CI`（也可直接查 API：
+`https://api.github.com/repos/Guanhongzheng/zhijianxia/actions/runs?per_page=3`）。
+
 刻意没进门的：`e2e` / `e2e:offline` / `theme:verify` / `theme:ws`（前三个要真实浏览器，
 最后一个会连带停掉后端、见 §6 坑 J）。
 
