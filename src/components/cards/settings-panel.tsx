@@ -8,6 +8,7 @@ import {
   Download,
   Info,
   KeyRound,
+  Languages,
   Network,
   Palette,
   Plug,
@@ -71,6 +72,7 @@ import { ProfileSettings } from '@/components/cards/profile-settings';
 import { PersonalizationSettings } from '@/components/cards/personalization-settings';
 import { ApiCapabilitySettings } from '@/components/cards/api-capability-settings';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n/provider';
 
 /** 设置项定义（左侧导航） */
 const SETTINGS_SECTIONS = [
@@ -837,6 +839,7 @@ function LanSettings() {
 
 /** 通用设置 */
 function GeneralSettings() {
+  const { t, locale, setLocale } = useI18n();
   const notify = useAppStore((s) => s.notify);
   const resetPacks = useThemeStore((s) => s.resetPacks);
   const packs = useThemeStore((s) => s.packs);
@@ -847,6 +850,29 @@ function GeneralSettings() {
 
   return (
     <div className="space-y-3">
+      <SettingRow title={t('language')} desc={t('languageDesc')}>
+        <div className="zj-surface flex w-fit gap-1 p-1">
+          {(['zh', 'en'] as const).map((code) => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => setLocale(code)}
+              aria-pressed={locale === code}
+              className={cn(
+                'rounded-[calc(var(--radius-md)-2px)] px-3 py-1 text-xs font-medium transition-colors',
+                locale === code
+                  ? 'bg-[var(--zj-accent)] text-white'
+                  : 'text-[var(--zj-muted-fg)] hover:bg-[var(--zj-muted)]',
+              )}
+            >
+              {code === 'zh' ? t('languageZh') : t('languageEn')}
+            </button>
+          ))}
+        </div>
+      </SettingRow>
+
+      <Separator />
+
       <ActionRow
         icon={<Trash2 className="size-4" />}
         title="清空本地缓存"

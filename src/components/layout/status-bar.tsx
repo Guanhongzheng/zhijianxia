@@ -7,12 +7,14 @@ import { useAppStore } from '@/store/app-store';
 import { useAuthStore } from '@/store/auth-store';
 import { usePluginStore } from '@/store/plugin-store';
 import { avatarColor, cn } from '@/lib/utils';
+import { useI18n } from '@/lib/i18n/provider';
 
 /**
  * 底部导航栏 —— 左侧头像与问候语，右侧状态图标与主行动入口。
  * 结构参照启动器底栏：问候在左，状态与主行动在右。
  */
 export function StatusBar({ page }: { page: 1 | 2 }) {
+  const { t } = useI18n();
   const logged = useAuthStore((s) => s.logged);
   const user = useAuthStore((s) => s.user);
   const openLogin = useAuthStore((s) => s.openLogin);
@@ -61,8 +63,8 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
   // 第 1 页主行动为登录，第 2 页为启动插件
   const primary = page === 1
     ? {
-        label: logged ? '个人资料' : '登录',
-        hint: logged ? '查看与修改资料' : '解锁好友与群聊',
+        label: logged ? t('profile') : t('login'),
+        hint: logged ? t('viewEditProfile') : t('unlockHint'),
         icon: LogIn,
         onClick: () => {
           if (logged) openCard('settings');
@@ -71,10 +73,10 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
         disabled: false,
       }
     : {
-        label: selectedPlugin ? '启动插件' : '去安装插件',
+        label: selectedPlugin ? t('launchPlugin') : t('installPlugin'),
         hint: selectedPlugin
           ? selectedPlugin.manifest.name
-          : '功能广场里有更多',
+          : t('moreInPlaza'),
         icon: Play,
         onClick: () => {
           // 内核尚未启动完成时先不打开，避免进入空白页
@@ -115,10 +117,10 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm leading-tight font-medium">
-            {logged ? `您好！ ${user?.nickname ?? ''}` : '您好！ 访客'}
+            {logged ? `${t('greeting')} ${user?.nickname ?? ''}` : `${t('greeting')} ${t('guest')}`}
           </span>
           <span className="block truncate text-[0.6875rem] leading-tight text-[var(--zj-muted-fg)]">
-            {logged ? '点击查看个人资料' : '点击登录解锁完整功能'}
+            {logged ? t('viewProfile') : t('loginToUnlock')}
           </span>
         </span>
       </button>
@@ -129,8 +131,8 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
         <button
           type="button"
           onClick={() => openCard('ai-chat')}
-          title="AI 对话"
-          aria-label="AI 对话"
+          title={t('aiChat')}
+          aria-label={t('aiChat')}
           className="flex size-8 items-center justify-center rounded-md text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
         >
           <Sparkles className="size-4" />
@@ -142,10 +144,10 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
           onClick={() => void checkBackend()}
           title={
             backendOnline
-              ? '后端在线，点击重新检测'
-              : '后端未开启，点击重新检测'
+              ? t('backendOnline')
+              : t('backendOffline')
           }
-          aria-label="后端状态"
+          aria-label={t('backendStatus')}
           className="flex size-8 items-center justify-center rounded-md text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
         >
           {backendOnline ? (
@@ -161,8 +163,8 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
             <button
               type="button"
               onClick={() => setSwitcherOpen((v) => !v)}
-              title="展开插件列表"
-              aria-label="展开插件列表"
+              title={t('expandPlugins')}
+              aria-label={t('expandPlugins')}
               aria-expanded={switcherOpen}
               className="flex size-8 items-center justify-center rounded-md text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
             >
@@ -179,11 +181,11 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
                   className="zj-card absolute right-0 bottom-10 z-50 w-60 overflow-hidden p-1.5"
                 >
                   <p className="px-2 py-1.5 text-[0.6875rem] text-[var(--zj-muted-fg)]">
-                    已安装 {installedModules.length} 个插件 · 选择后点右下角启动
+                    {t('installedCount', { count: installedModules.length })}
                   </p>
                   {installedModules.length === 0 ? (
                     <p className="px-2 py-3 text-center text-xs text-[var(--zj-muted-fg)]">
-                      还没有安装插件
+                      {t('noPlugins')}
                     </p>
                   ) : (
                     <div className="max-h-64 space-y-0.5 overflow-y-auto">
@@ -240,7 +242,7 @@ export function StatusBar({ page }: { page: 1 | 2 }) {
                     }}
                     className="mt-1 w-full rounded-md border-t border-[var(--zj-border)] px-2 py-1.5 text-left text-[0.75rem] text-[var(--zj-accent)] transition-opacity hover:opacity-70"
                   >
-                    去功能广场安装更多 →
+                    {t('goInstallMore')}
                   </button>
                 </motion.div>
               )}
