@@ -54,7 +54,7 @@ zhijianxia/
 │   ├── lib/
 │   │   ├── ai/                   19 个模块：local-engine / ai-worker / chain /
 │   │   │                         model-download / ort-setup / scheduler /
-│   │   │                         device-profile（GPU 预算）/ sdk/
+│   │   │                         device-profile（GPU 预算）/ device-tier（设备档位）/ sdk/
 │   │   │   └── engine/           ★ 推理引擎边界：types / registry / transformers
 │   │   ├── backend/              后端 API 客户端（auth / registry / theme-plaza…）
 │   │   ├── theme/                protocol.ts / packager.ts / types.ts / search.ts
@@ -152,6 +152,7 @@ zhijianxia/
 | --- | --- | --- | --- |
 | 1 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
 | 2 | **AI 引擎升级（7B 目标）** | 中 | 详情见 `docs/AI-RUNTIME-ROADMAP.md`。结论：静态内存规划 / OPFS 流式 / KV 压缩 / 核融合 / GGUF 量化档**全部依赖换引擎**，当前 ORT Web 不提供这些钩子。Phase 1（引擎边界）已完成；Phase 2 接 WebLLM。**待用户拍板三件事**：7B 预期是否下调、是否接受第二套模型格式、是否接受 ≈2 MB 依赖 |
+| 3 | **生成式 UI 工具太少** | 低 | 底座已完整（`shared/ai-tools.json` 定义 schema → 后端执行 → `tool-parts.tsx` 渲染成卡片），只有 5 个工具（计算器/时间/换算/文本统计/随机数）。要落地「说句话出周报卡片」，只需**加一个工具**，不必动架构 |
 
 > **本轮已修复的既有问题**
 >

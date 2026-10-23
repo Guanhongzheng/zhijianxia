@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Check,
   Cpu,
@@ -66,6 +66,7 @@ import {
   modelWeightDtype,
   WEBGPU_MAX_Q4_BYTES,
 } from '@/lib/ai/local-models';
+import { assessDevice } from '@/lib/ai/device-tier';
 import { ProfileSettings } from '@/components/cards/profile-settings';
 import { PersonalizationSettings } from '@/components/cards/personalization-settings';
 import { ApiCapabilitySettings } from '@/components/cards/api-capability-settings';
@@ -222,6 +223,18 @@ function AiEngineSettings() {
    * 保证「检测中」这一帧不会把可用的模型误标成不可用。
    */
   const gpuBudget = activeRuntime?.gpuWeightBudgetBytes ?? WEBGPU_MAX_Q4_BYTES;
+  /**
+   * 设备档位评估 —— 只给建议，不自动改用户的选择。
+   * 没探测到运行时（首次渲染的那一帧）就不显示，避免给出会变的结论。
+   */
+  const assessment = useMemo(() => {
+    if (!activeRuntime) return null;
+    return assessDevice({
+      gpuWeightBudgetBytes: activeRuntime.gpuWeightBudgetBytes,
+      hasWebGpu: activeRuntime.hasWebGpuApi && activeRuntime.hasWebGpuAdapter,
+      models: LOCAL_MODEL_OPTIONS,
+    });
+  }, [activeRuntime]);
   /** 当前所选模型能否走 WebGPU */
   const selectedGpuOk = canUseWebGpu(findModelOption(modelId), gpuBudget);
   /** 面板上应当展示的设备 —— 超限时直接显示 WASM，避免误导 */
@@ -318,6 +331,39 @@ function AiEngineSettings() {
         desc="先下载权重到本地，再加载运行；已下载的模型会标记「已下载」，加载时不再消耗流量"
       >
         <div className="space-y-2">
+          {/*
+            设备档位建议：告诉用户「这台机器该选多大的模型」，
+            依据是实测的 GPU 权重预算（不是猜的型号）。
+            只做建议 + 一键采纳，不自动改用户已选好的模型 ——
+            静默替换会让「我明明选过」变成「怎么又变了」。
+          */}
+          {assessment && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--zj-border)] px-2.5 py-2">
+              <Badge
+                variant={assessment.tier === 'high' ? 'success' : 'outline'}
+                className="shrink-0 text-[0.6875rem]"
+              >
+                本机评估 · {assessment.label}
+              </Badge>
+              <span className="min-w-0 flex-1 text-[0.6875rem] leading-relaxed text-[var(--zj-muted-fg)]">
+                {assessment.reason}
+              </span>
+              {assessment.recommendedModel && assessment.recommendedModel.id !== modelId && (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="shrink-0 text-[0.6875rem]"
+                  onClick={() => {
+                    setModelId(assessment.recommendedModel!.id);
+                    saveSelectedModel(assessment.recommendedModel!.id);
+                    notify(`已切换到推荐模型：${assessment.recommendedModel!.name}`, 'success');
+                  }}
+                >
+                  用推荐的 {assessment.recommendedModel.name}
+                </Button>
+              )}
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
             {LOCAL_MODEL_OPTIONS.map((m) => {
               const active = modelId === m.id;

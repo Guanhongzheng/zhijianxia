@@ -1,8 +1,8 @@
 /**
- * GPU 权重预算的行为测试
+ * GPU 权重预算 + 设备档位的行为测试
  *
- * 直接加载 `src/lib/ai/device-profile.ts`（Node 22.6+ 类型擦除）。
- * 这里测的是**纯函数**：给定适配器限额，预算与判定是否符合预期。
+ * 直接加载 `src/lib/ai/device-profile.ts` / `device-tier.ts`（Node 22.6+ 类型擦除）。
+ * 这里测的是**纯函数**：给定适配器限额，预算、档位与推荐模型是否符合预期。
  * 真实 `GPUAdapter.limits` 的读取在 runtime.ts 里，需浏览器才能测。
  *
  * 用法：node scripts/ai-budget-test.mjs
@@ -15,6 +15,12 @@ import {
   formatBytes,
   FALLBACK_GPU_BUDGET_BYTES,
 } from '../src/lib/ai/device-profile.ts';
+import {
+  assessDevice,
+  pickRecommendedModel,
+  TIER_HIGH_BYTES,
+  TIER_MID_BYTES,
+} from '../src/lib/ai/device-tier.ts';
 import { WEBGPU_MAX_Q4_BYTES, LOCAL_MODEL_OPTIONS, canUseWebGpu } from '../src/lib/ai/local-models.ts';
 
 let pass = 0;
@@ -103,6 +109,57 @@ check(
   formatBytes(1 * GiB) === '1.0 GB' && formatBytes(512 * MiB) === '512 MB',
   'formatBytes 在 GB/MB 之间正确切换',
   `${formatBytes(1 * GiB)} / ${formatBytes(512 * MiB)}`,
+);
+
+// ========== 8. 设备档位与推荐模型 ==========
+const high = assessDevice({ gpuWeightBudgetBytes: 2 * GiB, hasWebGpu: true, models: LOCAL_MODEL_OPTIONS });
+check(high.tier === 'high', '预算 2 GiB + WebGPU → 高配', high.reason);
+check(
+  high.recommendedModel?.id === big.id,
+  '高配推荐清单里最大的、且放得下的模型（1.5B）',
+  high.recommendedModel?.id,
+);
+
+const mid = assessDevice({ gpuWeightBudgetBytes: 1 * GiB, hasWebGpu: true, models: LOCAL_MODEL_OPTIONS });
+check(mid.tier === 'mid', '预算 1 GiB + WebGPU → 中配', mid.reason);
+check(
+  (mid.recommendedModel?.q4Bytes ?? Infinity) <= 1 * GiB,
+  '中配推荐的模型必须放得进预算（不能推荐跑不动的）',
+  `${mid.recommendedModel?.id} ${formatBytes(mid.recommendedModel?.q4Bytes ?? 0)}`,
+);
+
+const lowByBudget = assessDevice({ gpuWeightBudgetBytes: 200 * MiB, hasWebGpu: true, models: LOCAL_MODEL_OPTIONS });
+check(lowByBudget.tier === 'low', '预算 200 MiB → 低配', lowByBudget.reason);
+
+const lowNoGpu = assessDevice({ gpuWeightBudgetBytes: 2 * GiB, hasWebGpu: false, models: LOCAL_MODEL_OPTIONS });
+check(
+  lowNoGpu.tier === 'low',
+  '没有 WebGPU 时一律低配（预算数字再大也不推荐本地跑大模型）',
+  lowNoGpu.reason,
+);
+check(
+  lowNoGpu.recommendedModel?.q4Bytes === tiny.q4Bytes,
+  '低配推荐清单里最小的模型（而不是「最大的能跑的」）',
+  lowNoGpu.recommendedModel?.id,
+);
+
+// 阈值边界：正好达到门槛应按更高档算
+check(
+  assessDevice({ gpuWeightBudgetBytes: TIER_HIGH_BYTES, hasWebGpu: true, models: LOCAL_MODEL_OPTIONS }).tier === 'high' &&
+    assessDevice({ gpuWeightBudgetBytes: TIER_HIGH_BYTES - 1, hasWebGpu: true, models: LOCAL_MODEL_OPTIONS }).tier === 'mid',
+  '高配门槛是闭区间（达到即高配，差 1 字节回落中配）',
+);
+check(
+  assessDevice({ gpuWeightBudgetBytes: TIER_MID_BYTES, hasWebGpu: true, models: LOCAL_MODEL_OPTIONS }).tier === 'mid' &&
+    assessDevice({ gpuWeightBudgetBytes: TIER_MID_BYTES - 1, hasWebGpu: true, models: LOCAL_MODEL_OPTIONS }).tier === 'low',
+  '中配门槛是闭区间',
+);
+
+// 预算连最小模型都放不下时，仍要给出「最小的那个」而不是 undefined
+check(
+  pickRecommendedModel(1, LOCAL_MODEL_OPTIONS) !== undefined,
+  '预算极小（1 字节）时仍返回最小模型，不返回 undefined',
+  pickRecommendedModel(1, LOCAL_MODEL_OPTIONS)?.id,
 );
 
 console.log('\n════════════════════════════════════════');
