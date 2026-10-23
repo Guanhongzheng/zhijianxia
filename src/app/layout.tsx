@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { I18nProvider } from '@/lib/i18n/provider';
+import { TelemetryBoot } from '@/components/system/telemetry-boot';
 
 export const metadata: Metadata = {
   title: '智简匣 · 本地离线 AI 工具箱',
@@ -27,7 +29,9 @@ export default function RootLayout({
       <body className="antialiased">
         {/* 壁纸层：由主题包决定，随主题切换平滑过渡 */}
         <div className="zj-wallpaper" aria-hidden="true" />
-        {children}
+        <I18nProvider>{children}</I18nProvider>
+        {/* 前端错误与 Web Vitals 采集（关闭方式见 src/lib/telemetry/index.ts） */}
+        <TelemetryBoot />
       </body>
     </html>
   );
