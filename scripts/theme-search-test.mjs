@@ -175,6 +175,32 @@ check(
   scored.map((m) => `${m.item.slug}:${m.score.toFixed(1)}`).join(' '),
 );
 
+// ========== 9. scheme 判定的边界 ==========
+//
+// 这个函数同时决定「列表接口给前端什么明暗」与「搜索的结构化信号」，
+// 判错会让亮色主题被当成暗色推荐。亮度公式抄自 WCAG，边界值必须逐个钉住。
+
+check(detectScheme({ scheme: 'dark' }) === 'dark', '显式声明 dark 直接采用');
+check(detectScheme({ scheme: 'LIGHT' }) === 'light', '声明大小写不敏感');
+check(detectScheme({ scheme: '  dark  ' }) === 'dark', '声明两侧空白被裁掉');
+check(
+  detectScheme({ scheme: 'auto', colors: { '--bg': '#000000' } }) === 'dark',
+  '非法的 scheme 声明被忽略，回落到亮度推断',
+);
+check(detectScheme({ colors: { '--bg': '#ffffff' } }) === 'light', '#ffffff 推断为亮色');
+check(detectScheme({ colors: { '--bg': '#000000' } }) === 'dark', '#000000 推断为暗色');
+check(detectScheme({ colors: { '--bg': '#fff' } }) === 'light', '三位缩写 #fff 能正确展开');
+check(detectScheme({ colors: { '--bg': '#000' } }) === 'dark', '三位缩写 #000 能正确展开');
+check(detectScheme({ colors: { '--bg': '#0b0f14ff' } }) === 'dark', '八位带 alpha 的色值取前六位判定');
+check(detectScheme({ colors: { '--bg': '#12345' } }) === 'light', '非法色值不抛错，回落亮色');
+check(detectScheme({ colors: {} }) === 'light', '没有 --bg 时回落亮色');
+check(detectScheme({}) === 'light', '空对象不抛错');
+check(detectScheme(null) === 'light', 'null 不抛错（列表接口可能拿到坏数据）');
+check(
+  detectScheme({ colors: { '--bg': '#f4efe6' } }) === 'light',
+  '墨黛的纸底 #f4efe6 判定为亮色（与 tags 自称的「暗色」冲突，以配色为准）',
+);
+
 console.log('\n════════════════════════════════════════');
 console.log(`结果：${pass} 通过，${fail} 失败`);
 console.log('════════════════════════════════════════');

@@ -105,7 +105,11 @@ export const DEFAULT_LOCAL_MODEL = 'Xenova/Qwen1.5-0.5B-Chat';
 
 /**
  * 可选模型清单。
- * 全部经阿里巴巴魔搭社区（ModelScope）实测可达，按体积从小到大排列。
+ * 全部经阿里巴巴魔搭社区（ModelScope）实测可达。
+ *
+ * 注意：**数组顺序不等于体积顺序**（新增模型时按推荐度插入即可）。
+ * 需要按体积挑选的地方（如 `device-tier.pickRecommendedModel`）必须自己排序，
+ * 不要假定这份清单有序。
  */
 export const LOCAL_MODEL_OPTIONS: LocalModelOption[] = [
   {

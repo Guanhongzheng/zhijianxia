@@ -1,6 +1,6 @@
 {
   "name": "zhijianxia",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "智简匣 · 本地离线 AI 优先的局域网工具箱（前端可独立运行，后端可选）",
   "engines": {
@@ -26,7 +26,12 @@
     "themes:check": "node scripts/theme-tools/theme-check.mjs",
     "themes:verify": "node scripts/theme-tools/theme-verify.mjs",
     "theme:search": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/theme-search-test.mjs",
+    "theme:pack": "node scripts/theme-pack-test.mjs",
+    "telemetry": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/telemetry-test.mjs",
     "ai:budget": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ai-budget-test.mjs",
+    "test:unit": "npm run theme:search && npm run ai:budget && npm run theme:pack && npm run telemetry",
+    "coverage": "node scripts/coverage.mjs",
+    "api:docs": "node scripts/gen-openapi.mjs",
     "theme:security": "node scripts/theme-security-test.mjs",
     "theme:ws": "node scripts/theme-ws-test.mjs",
     "theme:verify": "node scripts/verify-theme-plaza.mjs",
@@ -67,6 +72,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "c8": "^12.0.0",
     "playwright-core": "^1.64.1",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.0"

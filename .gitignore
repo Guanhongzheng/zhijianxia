@@ -51,6 +51,8 @@ Thumbs.db
 .idea/
 *.tsbuildinfo
 coverage/
+# c8 的原始 V8 coverage 数据（合并前的临时目录）
+.coverage/
 .pytest_cache/
 
 # editor
@@ -79,3 +81,7 @@ theme-shots/
 
 # WorkBuddy 工具数据（非项目代码）
 .workbuddy/
+
+# 会话交接文档：只在本机使用，不进入仓库
+# （含本机路径、进程号等环境信息，不适合公开）
+HANDOVER.md

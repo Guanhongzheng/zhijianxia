@@ -21,7 +21,19 @@ import {
   TIER_HIGH_BYTES,
   TIER_MID_BYTES,
 } from '../src/lib/ai/device-tier.ts';
-import { WEBGPU_MAX_Q4_BYTES, LOCAL_MODEL_OPTIONS, canUseWebGpu } from '../src/lib/ai/local-models.ts';
+import {
+  WEBGPU_MAX_Q4_BYTES,
+  LOCAL_MODEL_OPTIONS,
+  MODEL_SOURCES,
+  DEFAULT_LOCAL_MODEL,
+  DEFAULT_MODEL_SOURCE,
+  canUseWebGpu,
+  modelWeightDtype,
+  modelWeightFile,
+  findModelOption,
+  findModelSource,
+  inferFamily,
+} from '../src/lib/ai/local-models.ts';
 
 let pass = 0;
 let fail = 0;
@@ -160,6 +172,76 @@ check(
   pickRecommendedModel(1, LOCAL_MODEL_OPTIONS) !== undefined,
   '预算极小（1 字节）时仍返回最小模型，不返回 undefined',
   pickRecommendedModel(1, LOCAL_MODEL_OPTIONS)?.id,
+);
+
+// ========== 8. 模型清单（local-models）的自洽性 ==========
+//
+// 这份清单是「下载哪个文件、用多大显存、走哪个模板族」的唯一依据。
+// 单条写错不会报错，只会让用户下到一个跑不起来的模型 —— 所以逐条校验。
+
+check(
+  new Set(LOCAL_MODEL_OPTIONS.map((m) => m.id)).size === LOCAL_MODEL_OPTIONS.length,
+  '模型清单 id 唯一（重复会让「按 id 选中」指向错误项）',
+  `${LOCAL_MODEL_OPTIONS.length} 项`,
+);
+check(
+  LOCAL_MODEL_OPTIONS.every((m) => typeof m.q4Bytes === 'number' && m.q4Bytes > 0),
+  '每个模型都声明了正数 q4Bytes（否则预算判定会静默放行）',
+);
+// 清单顺序**不保证**有序（UI 展示顺序另有考虑），所以只断言真实契约：
+// 「预算内挑体积最大的」，与数组顺序无关。
+const under1GiB = LOCAL_MODEL_OPTIONS.filter((m) => (m.q4Bytes ?? 0) <= 1 * GiB);
+check(
+  under1GiB.length > 0 &&
+    pickRecommendedModel(1 * GiB, LOCAL_MODEL_OPTIONS)?.q4Bytes ===
+      Math.max(...under1GiB.map((m) => m.q4Bytes ?? 0)),
+  '预算内挑体积最大的模型（与清单数组顺序无关）',
+  pickRecommendedModel(1 * GiB, LOCAL_MODEL_OPTIONS)?.id,
+);
+check(
+  LOCAL_MODEL_OPTIONS.some((m) => m.id === DEFAULT_LOCAL_MODEL),
+  '默认模型在清单内',
+  DEFAULT_LOCAL_MODEL,
+);
+check(findModelOption(DEFAULT_LOCAL_MODEL)?.id === DEFAULT_LOCAL_MODEL, 'findModelOption 能按 id 命中');
+check(findModelOption('nope/not-exist') === undefined, '未知 id 返回 undefined（调用方需自行兜底）');
+
+// 精度与权重文件：默认值必须与下载器的假设一致
+check(modelWeightDtype(undefined) === 'q4', '缺省权重精度为 q4');
+check(modelWeightFile(undefined) === 'onnx/model_q4.onnx', '缺省权重文件为 onnx/model_q4.onnx');
+check(modelWeightDtype({ weightDtype: 'uint8' }) === 'uint8', '显式声明 uint8 时不被覆盖');
+check(modelWeightFile({ weightFile: 'onnx/model.onnx' }) === 'onnx/model.onnx', '显式权重文件原样返回');
+check(
+  LOCAL_MODEL_OPTIONS.every((m) => /^onnx\/model.*\.onnx$/.test(modelWeightFile(m))),
+  '清单里每个权重文件都指向 onnx/*.onnx',
+);
+
+// 模板族推断：决定 prompt 用 ChatML 还是 ChatML 变体，猜错会输出乱码
+check(inferFamily('Xenova/Qwen2.5-0.5B-Instruct') === 'qwen', '含 qwen 的 id 推断为 qwen');
+check(inferFamily('HuggingFaceTB/SmolLM2-360M-Instruct') === 'smol', '含 smol 的 id 推断为 smol');
+check(inferFamily('meta-llama/Llama-3.2-1B') === 'chatml', '其他模型回落到 chatml');
+check(inferFamily('QWEN2.5-1.5B') === 'qwen', '族推断大小写不敏感');
+
+// 模型源
+check(MODEL_SOURCES.length >= 2, '至少有国内源与官方源两个选项');
+check(findModelSource('hf-official').id === 'hf-official', 'findModelSource 能按 id 命中');
+check(
+  findModelSource('unknown-source').id === DEFAULT_MODEL_SOURCE,
+  '未知模型源回落到默认源（而不是抛错让下载卡死）',
+  DEFAULT_MODEL_SOURCE,
+);
+
+// canUseWebGpu 的两端
+check(canUseWebGpu(undefined) === true, '未知模型（undefined）不拦截');
+check(canUseWebGpu({ q4Bytes: undefined }) === true, '体积未知时不拦截（宁可试一把）');
+check(canUseWebGpu({ q4Bytes: 2 * GiB }) === false, '超出默认 1 GiB 预算时拦截');
+check(canUseWebGpu({ q4Bytes: 2 * GiB }, 4 * GiB) === true, '预算放大到 4 GiB 时同一模型放行');
+
+// device-tier 的两个边界：空清单不该崩、预算极小时仍给结果
+check(pickRecommendedModel(1 * GiB, []) === undefined, '空模型清单返回 undefined（不抛错）');
+check(
+  assessDevice({ gpuWeightBudgetBytes: 1 * GiB, hasWebGpu: true, models: [] }).recommendedModel === undefined,
+  '空清单时 assessDevice 仍能给出档位，只是没有推荐模型',
 );
 
 console.log('\n════════════════════════════════════════');

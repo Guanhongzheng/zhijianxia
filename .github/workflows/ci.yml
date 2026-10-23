@@ -64,11 +64,19 @@ jobs:
       - name: 类型检查
         run: npm run typecheck
 
-      - name: 主题意图搜索（21 项，纯函数）
-        run: npm run theme:search
+      # 一个步骤同时完成「跑单元测试」与「卡覆盖率门槛」：
+      # 分开跑等于把三个纯函数测试执行两遍（本地很快，CI 上没必要）。
+      # 门槛：纯逻辑层 行/分支/函数/语句 均 ≥80%，见 scripts/coverage.mjs。
+      - name: 单元测试 + 覆盖率门禁（≥80%）
+        run: npm run coverage
 
-      - name: GPU 权重预算（12 项，纯函数）
-        run: npm run ai:budget
+      - name: 覆盖率报告留档
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
 
       - name: 插件与内核（35 项）
         run: npm run plugins:verify
@@ -91,7 +99,7 @@ jobs:
           cat /tmp/zj-server.log
           exit 1
 
-      - name: 接口契约（68 项）
+      - name: 接口契约（72 项）
         run: npm run contract
 
       - name: 路径穿越防护（17 项）
