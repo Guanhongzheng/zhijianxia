@@ -38,37 +38,16 @@ import {
   downloadThemePackage,
   createThemePackage,
 } from '@/lib/theme/packager';
+import { uploadRegistryTheme } from '@/lib/backend/registry';
 import {
-  fetchRegistryThemes,
-  fetchRegistryTheme,
-  uploadRegistryTheme,
-  deleteRegistryTheme,
-  type RegistryTheme,
-  type RemoteThemePackage,
-} from '@/lib/backend/registry';
-import { backendBaseUrl } from '@/lib/backend/client';
-import { protocolToThemePack } from '@/lib/theme/protocol';
+  fetchPlazaThemes,
+  fetchPlazaThemeFile,
+  plazaCoverUrl,
+  deletePlazaTheme,
+  type PlazaTheme,
+} from '@/lib/backend/theme-plaza';
 import { cacheTheme, removeCachedTheme } from '@/lib/registry-cache';
 import { cn } from '@/lib/utils';
-
-/**
- * 把主题包内的相对资源路径解析为可访问的绝对 URL。
- *
- * 资源由后端以 `/theme-assets/<id>/assets/<file>` 提供，
- * 但前端与后端通常不在同一端口（3000 vs 8787），
- * 因此需要用后端基址补全，否则浏览器会去前端源上取资源。
- */
-function resolveAssetUrl(
-  pkg: Extract<RemoteThemePackage, { format: 'zhijianxia.theme.dir' }>,
-  relativePath: string | undefined,
-): string | undefined {
-  if (!relativePath) return undefined;
-  const entry = pkg.assets?.[relativePath];
-  if (!entry?.url) return undefined;
-  if (/^https?:\/\//i.test(entry.url)) return entry.url;
-  const base = backendBaseUrl(useAppStore.getState().lan);
-  return `${base}${entry.url}`;
-}
 
 /** 分类 id -> 图标 */
 const CATEGORY_ICONS: Record<string, typeof Sparkles> = {
@@ -103,34 +82,39 @@ export function ThemeMarketplacePanel() {
 
   const [keyword, setKeyword] = useState('');
   const [category, setCategory] = useState('all');
-  const [registryThemes, setRegistryThemes] = useState<RegistryTheme[]>([]);
-  const [registryLoading, setRegistryLoading] = useState(false);
+  const [plazaThemes, setPlazaThemes] = useState<PlazaTheme[]>([]);
+  const [plazaLoading, setPlazaLoading] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
-  const [detail, setDetail] = useState<RegistryTheme | null>(null);
+  const [detail, setDetail] = useState<PlazaTheme | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  /** 拉取后端仓库的主题包列表 */
+  /**
+   * 拉取主题广场的列表
+   *
+   * 走**公开浏览通道**（/api/themes）而不是 registry 管理通道 ——
+   * 浏览主题目录不该要求登录，否则未登录的用户看到的广场永远是空的。
+   */
   useEffect(() => {
-    if (!backendOnline || !token) {
-      setRegistryThemes([]);
+    if (!backendOnline) {
+      setPlazaThemes([]);
       return;
     }
     let cancelled = false;
-    setRegistryLoading(true);
-    void fetchRegistryThemes(lan, token)
+    setPlazaLoading(true);
+    void fetchPlazaThemes(lan)
       .then((list) => {
-        if (!cancelled) setRegistryThemes(list);
+        if (!cancelled) setPlazaThemes(list.items);
       })
       .catch(() => {
-        if (!cancelled) setRegistryThemes([]);
+        if (!cancelled) setPlazaThemes([]);
       })
       .finally(() => {
-        if (!cancelled) setRegistryLoading(false);
+        if (!cancelled) setPlazaLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [backendOnline, lan, token]);
+  }, [backendOnline, lan]);
 
   /** 已下载到本地（可离线）的主题 id */
   const downloadedIds = useMemo(
@@ -147,9 +131,9 @@ export function ThemeMarketplacePanel() {
   /** 按分类与关键词过滤仓库主题 */
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    return registryThemes.filter((t) => {
+    return plazaThemes.filter((t) => {
       // 默认/内置主题不在广场中出现
-      if (builtinIds.has(t.id)) return false;
+      if (builtinIds.has(t.slug)) return false;
       if (category !== 'all' && t.category !== category) return false;
       if (!kw) return true;
       return (
@@ -158,12 +142,12 @@ export function ThemeMarketplacePanel() {
         t.tags.some((tag) => tag.toLowerCase().includes(kw))
       );
     });
-  }, [registryThemes, category, keyword, builtinIds]);
+  }, [plazaThemes, category, keyword, builtinIds]);
 
   /** 仓库中被隐藏的默认/内置主题数量 */
   const hiddenBuiltinCount = useMemo(
-    () => registryThemes.filter((t) => builtinIds.has(t.id)).length,
-    [registryThemes, builtinIds],
+    () => plazaThemes.filter((t) => builtinIds.has(t.slug)).length,
+    [plazaThemes, builtinIds],
   );
 
   /** 导入本地 .theme 文件 */
@@ -181,28 +165,19 @@ export function ThemeMarketplacePanel() {
   };
 
   /** 从广场下载主题包并应用 */
-  const handleDownload = async (item: RegistryTheme) => {
-    if (!token) {
-      notify('请先登录后再下载主题包', 'error');
-      return;
-    }
-    setDownloading(item.id);
+  const handleDownload = async (item: PlazaTheme) => {
+    setDownloading(item.slug);
     try {
-      const raw = await fetchRegistryTheme(lan, token, item.id);
-      const pack =
-        raw.format === 'zhijianxia.theme.dir'
-          ? protocolToThemePack(raw.manifest, {
-              css: raw.css,
-              // 资源走后端静态服务，跨端口访问需补全为绝对地址
-              wallpaperUrl: resolveAssetUrl(raw, raw.manifest.wallpaper),
-              category: item.category,
-            })
-          : { ...raw.pack, builtin: false, category: item.category };
+      // 后端已把文件夹制主题转成 .theme 单文件信封（含亮/暗双变体、
+      // 卡片风格、毛玻璃参数、壁纸绝对地址），前端直接解析即可。
+      const raw = await fetchPlazaThemeFile(lan, item.slug);
+      const pack = themePackOf(raw);
       const next = {
         ...pack,
-        id: pack.id || item.id,
+        id: pack.id || item.slug,
         name: pack.name || item.name,
         builtin: false,
+        category: item.category,
       };
       saveCustomPack(next);
       cacheTheme(next);
@@ -245,11 +220,11 @@ export function ThemeMarketplacePanel() {
   };
 
   /** 从广场删除主题包 */
-  const handleDeleteRemote = async (item: RegistryTheme) => {
+  const handleDeleteRemote = async (item: PlazaTheme) => {
     if (!token || !isAdmin) return;
     try {
-      await deleteRegistryTheme(lan, token, item.id);
-      setRegistryThemes((prev) => prev.filter((t) => t.id !== item.id));
+      await deletePlazaTheme(lan, token, item.slug);
+      setPlazaThemes((prev) => prev.filter((t) => t.slug !== item.slug));
       notify(`主题包「${item.name}」已从广场删除`, 'info');
     } catch (err) {
       notify(err instanceof Error ? err.message : '删除失败', 'error');
@@ -310,7 +285,7 @@ export function ThemeMarketplacePanel() {
       </div>
 
       {/* 主题列表（局域网仓库） */}
-      {registryLoading ? (
+      {plazaLoading ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-40 w-full rounded-md" />
@@ -331,11 +306,12 @@ export function ThemeMarketplacePanel() {
         <div className="grid gap-3 sm:grid-cols-2">
           <AnimatePresence initial={false}>
             {filtered.map((item, idx) => {
-              const downloaded = downloadedIds.has(item.id);
-              const active = activePackId === item.id;
+              const downloaded = downloadedIds.has(item.slug);
+              const active = activePackId === item.slug;
+              const cover = plazaCoverUrl(lan, item);
               return (
                 <motion.article
-                  key={item.id}
+                  key={item.slug}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.97 }}
@@ -347,9 +323,22 @@ export function ThemeMarketplacePanel() {
                   className="zj-card flex flex-col gap-2.5 p-4"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--zj-accent-soft)] text-xl">
-                      {item.preview}
-                    </div>
+                    {cover ? (
+                      <img
+                        src={cover}
+                        alt={item.name}
+                        loading="lazy"
+                        className="size-10 shrink-0 rounded-xl object-cover"
+                        onError={(e) => {
+                          // 封面加载失败时退回色块占位
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--zj-accent-soft)] text-xl">
+                        🎨
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <h4 className="truncate text-sm font-medium">{item.name}</h4>
@@ -398,7 +387,7 @@ export function ThemeMarketplacePanel() {
                           <Button
                             variant="ghost"
                             size="xs"
-                            onClick={() => handleExport(item.id)}
+                            onClick={() => handleExport(item.slug)}
                             title="导出主题包"
                           >
                             <Upload className="size-3 rotate-180" />
@@ -408,7 +397,7 @@ export function ThemeMarketplacePanel() {
                             <Button
                               variant="ghost"
                               size="xs"
-                              onClick={() => void handleUpload(item.id)}
+                              onClick={() => void handleUpload(item.slug)}
                               title="上传到局域网广场"
                             >
                               <Upload className="size-3" />
@@ -430,17 +419,17 @@ export function ThemeMarketplacePanel() {
                       )}
                       <Button
                         size="xs"
-                        disabled={downloading === item.id}
+                        disabled={downloading === item.slug}
                         onClick={() => void handleDownload(item)}
                       >
-                        {downloading === item.id ? (
+                        {downloading === item.slug ? (
                           <Skeleton className="size-3" />
                         ) : downloaded ? (
                           <Check className="size-3" />
                         ) : (
                           <Download className="size-3" />
                         )}
-                        {downloading === item.id
+                        {downloading === item.slug
                           ? '下载中…'
                           : downloaded
                             ? active
@@ -564,7 +553,15 @@ export function ThemeMarketplacePanel() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <span className="text-xl">{detail?.preview}</span>
+              {detail?.coverUrl ? (
+                <img
+                  src={plazaCoverUrl(lan, detail)}
+                  alt={detail.name}
+                  className="size-7 rounded-md object-cover"
+                />
+              ) : (
+                <span className="text-xl">🎨</span>
+              )}
               {detail?.name}
             </DialogTitle>
             <DialogDescription>{detail?.description}</DialogDescription>
@@ -578,7 +575,7 @@ export function ThemeMarketplacePanel() {
                 <InfoRow label="作者" value={detail.author || '未知'} />
                 <InfoRow
                   label="状态"
-                  value={downloadedIds.has(detail.id) ? '已下载（可离线）' : '未下载'}
+                  value={downloadedIds.has(detail.slug) ? '已下载（可离线）' : '未下载'}
                 />
               </div>
 
@@ -611,7 +608,7 @@ export function ThemeMarketplacePanel() {
                 }}
               >
                 <Download className="size-3.5" />
-                {downloadedIds.has(detail.id) ? '重新下载并应用' : '下载并应用'}
+                {downloadedIds.has(detail.slug) ? '重新下载并应用' : '下载并应用'}
               </Button>
             )}
           </DialogFooter>

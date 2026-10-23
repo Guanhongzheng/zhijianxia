@@ -1,0 +1,17 @@
+:root {
+  --bg: #f5f6f1;
+  --fg: #1b1f16;
+  --accent: #4a7c0f;
+  --card: #fdfdfb;
+  --border: #dde1d3;
+  --fg-muted: #5f6656;
+  --card-alpha: 0.72;
+  --card-blur: 14px;
+  --nav-alpha: 0.6;
+  --nav-blur: 18px;
+  --nav-height: 62px;
+  --wallpaper-gradient: linear-gradient(140deg, #fbfcf8 0%, #f0f4e8 50%, #e6efd6 100%);
+  --wallpaper-veil: 0.9;
+  --wallpaper-gradient-dark: linear-gradient(150deg, #141a0e 0%, #0e1109 60%, #0a0d06 100%);
+  --wallpaper-veil-dark: 0.9;
+}

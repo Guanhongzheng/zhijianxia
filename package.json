@@ -24,7 +24,11 @@
     "plugin:new": "node scripts/new-plugin.mjs",
     "perf:check": "node perf-regress.mjs",
     "themes:check": "node scripts/theme-tools/theme-check.mjs",
-    "themes:verify": "node scripts/theme-tools/theme-verify.mjs"
+    "themes:verify": "node scripts/theme-tools/theme-verify.mjs",
+    "theme:security": "node scripts/theme-security-test.mjs",
+    "theme:ws": "node scripts/theme-ws-test.mjs",
+    "theme:verify": "node scripts/verify-theme-plaza.mjs",
+    "theme:covers": "node scripts/make-theme-covers.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.152",

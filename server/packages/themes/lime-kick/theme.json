@@ -1,0 +1,22 @@
+{
+  "id": "lime-kick",
+  "name": "青柠",
+  "author": "智简匣",
+  "version": "1.0.0",
+  "protocol": 2,
+  "description": "明快的高饱和亮色主题。青柠绿作主色搭配暖灰底，卡片走毛玻璃质感，适合白天与需要提神的场景。",
+  "tags": [
+    "亮色",
+    "毛玻璃",
+    "高饱和",
+    "白天"
+  ],
+  "category": "综合",
+  "colors": {
+    "--bg": "#f5f6f1",
+    "--fg": "#1b1f16",
+    "--accent": "#4a7c0f",
+    "--card": "#fdfdfb",
+    "--border": "#dde1d3"
+  }
+}

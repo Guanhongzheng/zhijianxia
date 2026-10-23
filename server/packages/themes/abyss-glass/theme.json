@@ -1,0 +1,18 @@
+{
+  "id": "abyss-glass",
+  "name": "深空琉璃",
+  "author": "智简匣",
+  "version": "1.0.0",
+  "protocol": 2,
+  "scheme": "dark",
+  "description": "沉浸式暗色主题。以深空为底，覆一层缓慢流动的极光，卡片与导航栏采用多层毛玻璃（高模糊 + 细描边 + 内高光），文字浮在玻璃之上。适合长时间沉浸写作与夜间专注。",
+  "tags": ["沉浸", "毛玻璃", "暗色", "极光", "护眼"],
+  "colors": {
+    "--bg": "#080b14",
+    "--fg": "#e8ecf6",
+    "--accent": "#7cc4ff",
+    "--card": "#121826",
+    "--border": "#243044"
+  },
+  "wallpaper": "assets/wallpaper.webp"
+}

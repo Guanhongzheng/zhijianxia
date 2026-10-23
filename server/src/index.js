@@ -28,6 +28,8 @@ const messageRoutes = require('./routes/messages');
 const aiRoutes = require('./routes/ai-proxy');
 const aiStreamRoutes = require('./routes/ai-stream');
 const registryRoutes = require('./routes/registry');
+const themeRoutes = require('./routes/themes');
+const { startWatcher, initialSync } = require('./theme-store/watcher');
 
 const PORT = Number(process.env.PORT) || 8787;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -61,6 +63,9 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/ai', aiStreamRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/registry', registryRoutes);
+// 主题广场（浏览通道）：读主题目录、拿封面与预览图、下载与导出
+// 与 /api/registry/themes（管理通道）同源，都是 server/packages/themes/ 目录
+app.use('/', themeRoutes);
 
 /**
  * 主题资源静态服务：/theme-assets/<theme-id>/assets/<file>
@@ -113,7 +118,56 @@ app.use((err, req, res, next) => {
 // ---------- HTTP + WebSocket ----------
 const server = http.createServer(app);
 hub.attach(server);
+// 公开的 WebSocket 通道：主题广场的实时更新（未登录也能收到）
+hub.attachPublic(server, '/ws/public');
 hub.startHeartbeat(30000);
+
+/**
+ * WebSocket 路径分流
+ *
+ * ⚠️ 同一个 HTTP server 上挂多个 WebSocketServer 时，
+ * 每个实例都会注册自己的 'upgrade' 监听，
+ * 而 ws 在路径不匹配时会**直接 abort 掉 socket**（握手返回 400）。
+ * 所以必须自己接管 'upgrade'，按 pathname 分流。
+ */
+server.on('upgrade', (req, socket, head) => {
+  let pathname = '';
+  try {
+    pathname = new URL(req.url, 'http://localhost').pathname;
+  } catch {
+    socket.destroy();
+    return;
+  }
+  if (pathname === hub.publicPath) {
+    hub.handlePublicUpgrade(req, socket, head);
+    return;
+  }
+  if (pathname === '/ws') {
+    hub.handleUpgrade(req, socket, head);
+    return;
+  }
+  socket.destroy();
+});
+
+// ---------- 主题目录监听 ----------
+// 主题仓库是「数据即文件」：用户把文件夹丢进 server/packages/themes/ 就生效。
+// 监听器负责把变更推给广场前端，并刷新扫描缓存。
+//
+// ⚠️ 顺序很重要：先 initialSync 拿到「已存在的主题」集合，
+// 再把它交给 watcher —— 否则 watcher 里的 known 是空集，
+// 启动后第一次对账会把所有主题当成「新增」重发一遍。
+const knownThemes = new Set();
+const stopThemeWatcher = startWatcher({
+  known: knownThemes,
+  broadcast: (payload) => {
+    const n = hub.broadcastPublic(payload);
+    console.log(`[themes] ${payload.type} → ${payload.slug}（已通知 ${n} 个访客）`);
+  },
+});
+
+void initialSync().then((known) => {
+  for (const slug of known) knownThemes.add(slug);
+});
 
 /**
  * 收集所有局域网 IPv4 地址，方便用户在前端设置里填写后端地址
@@ -162,6 +216,7 @@ server.listen(PORT, HOST, () => {
 function shutdown(signal) {
   console.log(`\n[server] 收到 ${signal}，正在关闭服务...`);
   hub.close();
+  void stopThemeWatcher().catch(() => { /* 忽略 */ });
   server.close(() => process.exit(0));
   // 兜底：3 秒后强制退出
   setTimeout(() => process.exit(0), 3000).unref();

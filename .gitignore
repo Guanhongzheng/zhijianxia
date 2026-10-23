@@ -75,3 +75,6 @@ my-plugins/
 .theme-verify-tmp/
 theme-shots/
 .tmp-theme-profile/
+
+# WorkBuddy 工具数据（非项目代码）
+.workbuddy/

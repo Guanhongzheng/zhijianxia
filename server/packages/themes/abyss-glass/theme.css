@@ -1,0 +1,30 @@
+:root {
+  /* ---- 基础色（与 theme.json 的 colors 一一对应）---- */
+  --bg: #080b14;
+  --fg: #e8ecf6;
+  --accent: #7cc4ff;
+  --card: #121826;
+  --border: #243044;
+
+  /* ---- 层次：靠亮度而非饱和度区分，避免在极光背景上失焦 ---- */
+  --fg-muted: #9aa6bf;
+  --fg-subtle: #6b7690;
+
+  /* ---- 卡片：沉浸式毛玻璃的核心 ----
+     alpha 压到 0.52（比常规毛玻璃更低）——
+     背景的极光要能透上来，否则「沉浸」就变成了「深色」；
+     blur 提到 26px，让透过来的光变成柔和的色晕而不是噪点。 */
+  --card-alpha: 0.52;
+  --card-blur: 26px;
+
+  /* ---- 边框：细而亮，是玻璃的「边」 ----
+     常规做法是压低 alpha 让边框隐没，但深色玻璃上边框几乎看不见，
+     卡片会糊成一片。这里反而提高 alpha 并用偏冷的浅色，
+     模拟玻璃边缘的折射高光。 */
+  --border-alpha: 0.55;
+
+  /* ---- 字体栈 ---- */
+  --font-ui: "Microsoft YaHei", "PingFang SC", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: "Cascadia Mono", "SF Mono", Consolas, monospace;
+}

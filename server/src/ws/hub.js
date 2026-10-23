@@ -30,16 +30,44 @@ class Hub {
     this.wss = null;
     /** @type {Map<string, Set<import('ws').WebSocket>>} */
     this.clients = new Map();
+    /**
+     * 公开广播组：不要求登录态的连接（如主题广场的实时更新）。
+     * @type {Set<import('ws').WebSocket>}
+     */
+    this.publicClients = new Set();
+    /** @type {import('ws').WebSocketServer|null} */
+    this.publicWss = null;
+    /** 公开通道的挂载路径 */
+    this.publicPath = '/ws/public';
   }
 
   /**
    * 挂载到 HTTP 服务
+   *
+   * ⚠️ 用 `noServer: true` 而不是 `{ server, path }` ——
+   * 同一个 HTTP server 上挂多个 WebSocketServer 时，
+   * 每个实例都会注册自己的 'upgrade' 监听，
+   * 而 ws 在路径不匹配时会**直接 abort 掉 socket**（握手返回 400）。
+   * 所以必须自己接管 'upgrade'，按 pathname 分流（见 index.js）。
+   *
    * @param {import('http').Server} server
    */
   attach(server) {
-    this.wss = new WebSocketServer({ server, path: '/ws' });
+    this.wss = new WebSocketServer({ noServer: true });
     this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
     return this.wss;
+  }
+
+  /**
+   * 处理 HTTP upgrade 请求（按路径分流到本 hub）
+   * @param {import('http').IncomingMessage} req
+   * @param {import('net').Socket} socket
+   * @param {Buffer} head
+   */
+  handleUpgrade(req, socket, head) {
+    this.wss.handleUpgrade(req, socket, head, (ws) => {
+      this.wss.emit('connection', ws, req);
+    });
   }
 
   /**
@@ -99,6 +127,9 @@ class Hub {
    * @param {import('ws').WebSocket} ws
    */
   handleClose(ws) {
+    // 公开连接的清理（没有 uid）
+    if (this.publicClients.delete(ws)) return;
+
     const uid = ws.uid;
     if (!uid) return;
     const set = this.clients.get(uid);
@@ -290,6 +321,73 @@ class Hub {
   }
 
   /**
+   * 挂载公开的 WebSocket 通道（不要求登录态）。
+   *
+   * 用途：主题广场的实时更新 —— 广场是**公开浏览**通道，
+   * 未登录的访客也要能收到「新增主题了」的推送。
+   * 消息内容只含主题 slug 等公开信息，不涉及任何用户数据。
+   *
+   * ⚠️ 同样用 `noServer: true` —— 见 attach() 的说明。
+   *
+   * @param {import('http').Server} server
+   * @param {string} path 挂载路径
+   */
+  attachPublic(server, path) {
+    const wss = new WebSocketServer({ noServer: true });
+    wss.on('connection', (ws) => {
+      this.publicClients.add(ws);
+      ws.isAlive = true;
+      this.sendJson(ws, { type: 'hello', scope: 'public' });
+
+      ws.on('pong', () => { ws.isAlive = true; });
+      // 公开通道只接收心跳，不处理业务消息
+      ws.on('message', (raw) => {
+        try {
+          const data = JSON.parse(raw.toString());
+          if (data && data.type === 'ping') this.sendJson(ws, { type: 'pong', ts: Date.now() });
+        } catch {
+          /* 忽略非法消息 */
+        }
+      });
+      ws.on('close', () => this.publicClients.delete(ws));
+      ws.on('error', () => this.publicClients.delete(ws));
+    });
+    this.publicWss = wss;
+    this.publicPath = path;
+    return wss;
+  }
+
+  /**
+   * 处理指向公开通道的 HTTP upgrade 请求
+   * @param {import('http').IncomingMessage} req
+   * @param {import('net').Socket} socket
+   * @param {Buffer} head
+   */
+  handlePublicUpgrade(req, socket, head) {
+    if (!this.publicWss) {
+      socket.destroy();
+      return;
+    }
+    this.publicWss.handleUpgrade(req, socket, head, (ws) => {
+      this.publicWss.emit('connection', ws, req);
+    });
+  }
+
+  /**
+   * 向公开通道广播（主题变更等公开事件）
+   * @param {object} payload
+   * @returns {number} 实际送达的连接数
+   */
+  broadcastPublic(payload) {
+    let count = 0;
+    for (const ws of this.publicClients) {
+      this.sendJson(ws, payload);
+      count += 1;
+    }
+    return count;
+  }
+
+  /**
    * 当前在线 uid 列表
    * @returns {string[]}
    */
@@ -319,6 +417,16 @@ class Hub {
           try { ws.ping(); } catch { /* 忽略 */ }
         }
       }
+      // 公开通道同样需要心跳，否则僵死连接会一直堆积
+      for (const ws of this.publicClients) {
+        if (ws.isAlive === false) {
+          try { ws.terminate(); } catch { /* 忽略 */ }
+          this.publicClients.delete(ws);
+          continue;
+        }
+        ws.isAlive = false;
+        try { ws.ping(); } catch { /* 忽略 */ }
+      }
     }, intervalMs);
     if (this.heartbeatTimer.unref) this.heartbeatTimer.unref();
   }
@@ -328,6 +436,14 @@ class Hub {
    */
   close() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    for (const ws of this.publicClients) {
+      try { ws.close(1001, 'server shutdown'); } catch { /* 忽略 */ }
+    }
+    this.publicClients.clear();
+    if (this.publicWss) {
+      this.publicWss.close();
+      this.publicWss = null;
+    }
     if (this.wss) {
       for (const set of this.clients.values()) {
         for (const ws of set) {

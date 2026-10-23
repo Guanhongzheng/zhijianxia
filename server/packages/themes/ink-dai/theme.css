@@ -1,0 +1,13 @@
+:root {
+  --bg: #f4efe6;
+  --fg: #1f2428;
+  --accent: #3f6d8f;
+  --card: #fbf8f3;
+  --border: #ddd5c7;
+  --fg-muted: #6b7178;
+  --nav-height: 60px;
+  --wallpaper-gradient: linear-gradient(160deg, #f7f3ec 0%, #ece5d9 55%, #e3ddd0 100%);
+  --wallpaper-veil: 0.92;
+  --wallpaper-gradient-dark: radial-gradient(ellipse at 30% 20%, #1a2530 0%, #0f1317 55%, #090c0f 100%);
+  --wallpaper-veil-dark: 0.88;
+}

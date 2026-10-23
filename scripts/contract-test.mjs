@@ -698,6 +698,10 @@ async function req(path, { method = 'GET', body, token } = {}) {
     ),
     'utf8'
   );
+  const themePlazaSrc = readFileSync(
+    new URL('../src/lib/backend/theme-plaza.ts', import.meta.url),
+    'utf8'
+  );
   const storeSrc = readFileSync(
     new URL('../src/store/theme-store.ts', import.meta.url),
     'utf8'
@@ -711,18 +715,21 @@ async function req(path, { method = 'GET', body, token } = {}) {
     'protocol.ts 提供 isProtocolTheme / protocolToThemePack / parseProtocolCss'
   );
 
+  // 广场下载：主题仓库是文件夹制，后端已把它转成 .theme 单文件信封
+  // （含亮/暗双变体、卡片风格、毛玻璃参数、壁纸绝对地址），
+  // 前端直接用 themePackOf 解析即可 —— 不再在前端重复实现协议适配。
   check(
-    /raw\.format === 'zhijianxia\.theme\.dir'/.test(marketSrc) &&
-      /protocolToThemePack\(raw\.manifest/.test(marketSrc),
-    '广场下载按形态分派：文件夹制走协议适配，信封制走原逻辑',
-    'handleDownload 已分派两种形态'
+    /fetchPlazaThemeFile/.test(marketSrc) &&
+      /themePackOf\(raw\)/.test(marketSrc),
+    '广场下载走浏览通道的 .theme 导出，前端用 themePackOf 解析（后端负责协议适配）',
+    'handleDownload 未使用 fetchPlazaThemeFile + themePackOf'
   );
 
   check(
-    /resolveAssetUrl/.test(marketSrc) &&
-      /backendBaseUrl/.test(marketSrc),
-    '主题包资源 URL 补全为后端绝对地址（跨端口可访问）',
-    'resolveAssetUrl 已接入 backendBaseUrl'
+    /plazaCoverUrl/.test(marketSrc) &&
+      /backendBaseUrl/.test(themePlazaSrc),
+    '主题封面 URL 补全为后端绝对地址（跨端口可访问）',
+    'plazaCoverUrl 未接入 backendBaseUrl'
   );
 
   // 协议包必须能派生出完整的亮/暗两套配色，否则切换模式会崩
@@ -864,6 +871,100 @@ async function req(path, { method = 'GET', body, token } = {}) {
     shimNames.length > 40 && missing.length === 0,
     `shim 解构的 ${shimNames.length} 个名字在运行时 SDK 中全部存在（防止第三方插件运行时才报 undefined）`,
     missing.length === 0 ? `shim 与 SDK 字段一致（${shimNames.length} 项）` : `缺少：${missing.join(', ')}`,
+  );
+
+  /* ====================================================================== */
+  /* 主题广场（后端合并后的主题仓库）                                          */
+  /* ====================================================================== */
+  // 主题仓库是「数据即文件」：server/packages/themes/<slug>/ 每个文件夹一个主题。
+  // 浏览通道（/api/themes）是公开的 —— 广场是公共目录，不该被「先登录」挡住。
+
+  const plazaList = await req('/api/themes');
+  check(
+    plazaList.status === 200 &&
+      Array.isArray(plazaList.data?.items) &&
+      plazaList.data.total >= 1,
+    'GET /api/themes 公开可用（无需登录）并返回主题列表',
+    `status=${plazaList.status} total=${plazaList.data?.total}`,
+  );
+
+  const plazaItems = plazaList.data?.items ?? [];
+  const plazaFirst = plazaItems[0];
+  check(
+    plazaItems.length > 0 &&
+      plazaFirst.slug &&
+      plazaFirst.name &&
+      typeof plazaFirst.fileSize === 'number' &&
+      typeof plazaFirst.updatedAt === 'number' &&
+      Array.isArray(plazaFirst.tags),
+    '主题列表项含 slug / name / fileSize / updatedAt / tags（广场卡片所需字段）',
+    plazaFirst ? JSON.stringify(Object.keys(plazaFirst)) : '(空)',
+  );
+
+  // 每个主题都必须能导出成智简匣可导入的 .theme 信封
+  if (plazaFirst) {
+    const exported = await req(`/api/themes/${encodeURIComponent(plazaFirst.slug)}/theme-file`);
+    const pkg = exported.data;
+    check(
+      exported.status === 200 &&
+        pkg?.format === 'zhijianxia.theme' &&
+        pkg?.formatVersion === 1 &&
+        pkg?.manifest?.id &&
+        pkg?.pack?.light?.bg &&
+        pkg?.pack?.dark?.bg,
+      '主题可导出为 .theme 信封（含亮/暗双变体，可被「导入 .theme」识别）',
+      `status=${exported.status} format=${pkg?.format}`,
+    );
+    check(
+      Boolean(pkg?.pack?.cssVars) || plazaFirst.slug === 'pure-light',
+      '导出的主题保留了 theme.css 的额外变量（毛玻璃参数等）',
+      `cssVars=${JSON.stringify(pkg?.pack?.cssVars)}`,
+    );
+  }
+
+  // 路径穿越必须 400 —— 用原始 socket 测才有意义（curl/fetch 会在客户端规范化掉 ..）
+  const themeRouterSrc = readFileSync(
+    new URL('../server/src/routes/themes.js', import.meta.url),
+    'utf8',
+  );
+  const themeScannerSrc = readFileSync(
+    new URL('../server/src/theme-store/scanner.js', import.meta.url),
+    'utf8',
+  );
+  check(
+    /%2e\|%2f\|%5c/i.test(themeRouterSrc) &&
+      /%25\(2e\|2f\|5c\)/i.test(themeRouterSrc) &&
+      /decodeURIComponent/.test(themeRouterSrc),
+    '主题路由对编码穿越 / 双编码 / 字面 .. 都做了原始 URL 守卫',
+    '守卫缺失',
+  );
+  check(
+    /startsWith\(themeDir \+ path\.sep\)/.test(themeScannerSrc) &&
+      /path\.resolve\(themeDir, \.\.\.rest\)/.test(themeScannerSrc),
+    'safeJoin 双重保险：断言结果仍在该主题目录内（防逃到兄弟主题）',
+    'safeJoin 断言缺失',
+  );
+
+  // WebSocket：同一 HTTP server 上挂两条通道时必须用 noServer 手动分流，
+  // 否则 ws 会在路径不匹配时直接 abort 掉 socket（握手 400）。
+  const themeHubSrc = readFileSync(new URL('../server/src/ws/hub.js', import.meta.url), 'utf8');
+  const themeServerSrc = readFileSync(new URL('../server/src/index.js', import.meta.url), 'utf8');
+  check(
+    /noServer:\s*true/.test(themeHubSrc) &&
+      /handlePublicUpgrade/.test(themeHubSrc) &&
+      /server\.on\('upgrade'/.test(themeServerSrc) &&
+      /\/ws\/public/.test(themeServerSrc),
+    'WebSocket 用 noServer 手动分流（/ws 聊天 + /ws/public 公开），避免握手互相 abort',
+    'WS 分流缺失',
+  );
+
+  // 图片端点必须带 CORP 头 —— 前端启用了 COEP: require-corp，
+  // 跨源图片缺这个头会被浏览器直接拦截。
+  check(
+    /Cross-Origin-Resource-Policy/.test(themeRouterSrc) &&
+      /setImageHeaders\(res\)/.test(themeRouterSrc),
+    '主题图片端点带 Cross-Origin-Resource-Policy（COEP 下不被浏览器拦截）',
+    'CORP 头缺失',
   );
 
   // 清理
