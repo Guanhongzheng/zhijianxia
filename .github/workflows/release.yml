@@ -1,0 +1,100 @@
+# 发布流水线（CD）
+#
+# 触发：推送 v* 标签，或手动运行。
+# 与 ci.yml 的分工：CI 是「每次提交都要快」，发布是「只在发版时做重活」——
+# 所以容器构建放这里，不拖慢日常反馈。
+#
+# 产物：
+#   1. GitHub Release + 自动生成的变更说明；
+#   2. 可部署的构建包（.next / server / dist-plugins，不含 node_modules）；
+#   3. 容器镜像（本地构建验证；推送到镜像仓库需要配置 registry 凭据，
+#      见文末注释）。
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（仅用于产物命名，如 1.0.1）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: 构建 / 验证 / 发布
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      ZJ_API: http://127.0.0.1:8787
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装后端依赖
+        run: npm ci --prefix server
+
+      # 发布前把该跑的都跑一遍：宁可发不出去，也别发出一个坏的
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 单元测试 + 覆盖率门禁
+        run: npm run coverage
+
+      - name: 打包插件产物
+        run: npm run plugins:build
+
+      - name: 生产构建
+        run: npm run build
+
+      - name: 打包可部署产物
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          tar -czf "zhijianxia-${VERSION}.tar.gz" \
+            .next public server dist-plugins \
+            package.json package-lock.json next.config.ts start.mjs README.md
+          ls -lh "zhijianxia-${VERSION}.tar.gz"
+
+      # 容器镜像：只构建不推送。要推送就把下面两步换成
+      # docker/login-action + docker/build-push-action（需要 REGISTRY_* secrets）。
+      - name: 构建容器镜像（验证 Dockerfile 可用）
+        run: docker build -t "zhijianxia:${VERSION}" .
+
+      - name: 冒烟测试镜像
+        run: |
+          docker run -d --name zj-smoke -p 18080:3000 -p 18787:8787 "zhijianxia:${VERSION}"
+          for i in $(seq 1 45); do
+            if curl -sf http://127.0.0.1:18787/api/health > /dev/null; then
+              echo "后端存活（${i}s）"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18787/api/health
+          curl -sf -o /dev/null http://127.0.0.1:18080/
+          docker logs zj-smoke | tail -20
+          docker rm -f zj-smoke
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zhijianxia-*.tar.gz
+          generate_release_notes: true
+          draft: false
+          fail_on_unmatched_files: true

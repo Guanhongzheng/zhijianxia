@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+.next
+.next-*
+out
+coverage
+.coverage
+.git
+.github
+theme-shots
+dist-plugins
+server/data
+*.log
+.tmp*
