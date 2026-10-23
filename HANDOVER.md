@@ -204,6 +204,12 @@ push 到 main / 开 PR / 手动触发时，按「先便宜后昂贵」的顺序�
 `typecheck` → `theme:search` → `plugins:build` + `plugins:verify` →
 起后端（`server:init` + 等 `/api/themes` 返回 200）→ `contract` → `theme:security` → `next build`。
 
+两个**第一次跑就红**的坑（都已修，留作前车之鉴）：
+1. 根目录 `npm ci` **不装后端依赖** —— 后端有独立的 `server/package.json`，
+   必须再 `npm ci --prefix server`，否则 `Cannot find module 'express'`；
+2. `plugins:verify` 读 `dist-plugins/*.plugin` 并断言 6 个，而该目录是构建产物，
+   干净 checkout 上必须先 `npm run plugins:build`。
+
 刻意没进门的：`e2e` / `e2e:offline` / `theme:verify` / `theme:ws`（前三个要真实浏览器，
 最后一个会连带停掉后端、见 §6 坑 J）。
 
@@ -334,6 +340,16 @@ console 消息文本里只有「404」，不含「favicon」。要用 `m.locatio
 **T. 测试别写死主题数量**
 「新增主题」是这套系统的核心用法，写死数量等于把正常操作变成测试失败。
 改成动态计算（总数 = v1+v2、sort 首项 = 动态取 mtime 最大者、分页 = 剩余数）。
+
+**U. 只有「干净数据库」才会暴露的初始化失败（CI 首跑抓到的）**
+`init-db.js` 里 `CREATE INDEX IF NOT EXISTS idx_friends_user ON friends(user_id)` ——
+而 `friends` 表的列叫 `user_uid`（`user_id` 是 `sessions` 的）。本机永远不报错，
+因为同名索引早就存在，`IF NOT EXISTS` 直接跳过；**只有全新库才炸**
+`no such column: user_id`，初始化中断 → 后续所有测试 ECONNREFUSED。
+→ 教训：`IF NOT EXISTS` 会把「定义写错」悄悄吞掉，本机能跑 ≠ 新环境能装。
+→ 复现方式：`git worktree add` 出一个干净树（`server/data` 是 gitignore 的）
+  再跑 `npm run server:init`，比清本机数据库安全得多。
+→ CI 的价值正在这里：它永远从「干净 checkout + 空数据库」开始。
 
 ---
 

@@ -105,7 +105,10 @@ const SCHEMA = [
 
   // 常用查询索引
   `CREATE INDEX IF NOT EXISTS idx_sessions_user    ON sessions(user_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_friends_user     ON friends(user_id)`,
+  // ⚠️ friends 表的列名是 `user_uid`，不是 `user_id`（sessions 才是 user_id）。
+  // 这里曾误写成 user_id —— 本机不报错是因为索引早已存在，
+  // `CREATE INDEX IF NOT EXISTS` 直接跳过；**只有全新数据库才会炸**。
+  `CREATE INDEX IF NOT EXISTS idx_friends_user     ON friends(user_uid)`,
   `CREATE INDEX IF NOT EXISTS idx_friends_friend   ON friends(friend_uid)`,
   `CREATE INDEX IF NOT EXISTS idx_members_group    ON group_members(group_id)`,
   `CREATE INDEX IF NOT EXISTS idx_messages_target  ON messages(scope, target, created_at)`,

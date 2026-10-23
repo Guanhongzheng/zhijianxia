@@ -46,6 +46,12 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      # ⚠️ 后端有自己独立的 package.json / lock（Express、ws、chokidar…），
+      # 根目录的 `npm ci` **不会**装它。漏了这步，`node server/src/index.js`
+      # 直接 `Cannot find module 'express'`。
+      - name: 安装后端依赖
+        run: npm ci --prefix server
+
       # `plugins:verify` 的最后一段会读 `dist-plugins/*.plugin` 并断言恰好 6 个 ——
       # 而 `dist-plugins/` 是 gitignore 的构建产物，干净 checkout 里根本不存在。
       # 本机之所以一直能跑绿，是因为它早就在那里了。这里必须先构建。
