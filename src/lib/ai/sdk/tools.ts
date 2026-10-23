@@ -88,6 +88,55 @@ export const randomNumberSchema = z.object({
   max: z.number().int().describe('最大值（含）'),
 });
 
+/**
+ * 周报卡片。
+ *
+ * 这是一个**呈现型工具**：它不计算任何东西，只是给模型一个「输出结构化数据」
+ * 的出口，让界面能渲染成卡片而不是一段纯文本。
+ *
+ * 所有上限都写在 schema 里（zod 会在浏览器侧强制），
+ * 服务端 `ai-tools.js` 有**同样的数字**做兜底 —— 模型绕过前端直连后端时仍然有界。
+ * 两处必须同步改。
+ */
+export const weeklyReportSchema = z.object({
+  title: z.string().min(1).max(60).describe('周报标题，例如「第 43 周周报」'),
+  period: z.string().max(40).optional().describe('时间范围，例如 2026-10-19 ~ 2026-10-23'),
+  highlights: z
+    .array(z.string().min(1).max(200))
+    .min(1)
+    .max(10)
+    .describe('本周完成的事项，每条一句话'),
+  risks: z
+    .array(z.string().min(1).max(200))
+    .max(6)
+    .optional()
+    .describe('风险与阻塞，没有就省略'),
+  next: z
+    .array(z.string().min(1).max(200))
+    .max(6)
+    .optional()
+    .describe('下周计划，没有就省略'),
+});
+
+export type WeeklyReportInput = z.infer<typeof weeklyReportSchema>;
+
+/** 规整周报输出：去空白、丢空条目；约束与 schema 一致（服务端有同名实现） */
+export function normalizeWeeklyReport(input: WeeklyReportInput) {
+  const clip = (s: string | undefined, max: number) => (s ?? '').trim().slice(0, max);
+  const list = (arr: string[] | undefined, maxItems: number) =>
+    (arr ?? [])
+      .map((s) => clip(s, 200))
+      .filter(Boolean)
+      .slice(0, maxItems);
+  return {
+    title: clip(input.title, 60),
+    period: clip(input.period, 40),
+    highlights: list(input.highlights, 10),
+    risks: list(input.risks, 6),
+    next: list(input.next, 6),
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* 工具执行体（浏览器内）                                                       */
 /* -------------------------------------------------------------------------- */
@@ -342,6 +391,15 @@ export const browserTools = {
       const hi = Math.max(min, max);
       return { min: lo, max: hi, result: lo + Math.floor(Math.random() * (hi - lo + 1)) };
     },
+  }),
+
+  weeklyReport: tool({
+    description:
+      '把零散的工作记录整理成一份结构化周报卡片，直接以卡片形式展示给用户。' +
+      '当用户说「帮我写周报」「整理这周做了什么」「生成周报」时使用。' +
+      '只整理用户提供的信息，不要编造未提到的事实；信息不足时用用户原话归纳。',
+    inputSchema: weeklyReportSchema,
+    execute: async (input) => normalizeWeeklyReport(input),
   }),
 };
 

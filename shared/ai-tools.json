@@ -15,7 +15,9 @@
             "description": "要计算的数学表达式，例如 (12+8)*3.5。只允许数字与 + - * / % ^ ( ) . 空格"
           }
         },
-        "required": ["expression"],
+        "required": [
+          "expression"
+        ],
         "additionalProperties": false
       }
     },
@@ -44,11 +46,24 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "value": { "type": "number", "description": "要换算的数值" },
-          "from": { "type": "string", "description": "源单位，如 km / m / cm / kg / g / lb / celsius / fahrenheit" },
-          "to": { "type": "string", "description": "目标单位，同上" }
+          "value": {
+            "type": "number",
+            "description": "要换算的数值"
+          },
+          "from": {
+            "type": "string",
+            "description": "源单位，如 km / m / cm / kg / g / lb / celsius / fahrenheit"
+          },
+          "to": {
+            "type": "string",
+            "description": "目标单位，同上"
+          }
         },
-        "required": ["value", "from", "to"],
+        "required": [
+          "value",
+          "from",
+          "to"
+        ],
         "additionalProperties": false
       }
     },
@@ -60,9 +75,14 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "text": { "type": "string", "description": "要统计的文本" }
+          "text": {
+            "type": "string",
+            "description": "要统计的文本"
+          }
         },
-        "required": ["text"],
+        "required": [
+          "text"
+        ],
         "additionalProperties": false
       }
     },
@@ -74,10 +94,64 @@
       "parameters": {
         "type": "object",
         "properties": {
-          "min": { "type": "integer", "description": "最小值（含）" },
-          "max": { "type": "integer", "description": "最大值（含）" }
+          "min": {
+            "type": "integer",
+            "description": "最小值（含）"
+          },
+          "max": {
+            "type": "integer",
+            "description": "最大值（含）"
+          }
         },
-        "required": ["min", "max"],
+        "required": [
+          "min",
+          "max"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "weeklyReport",
+      "group": "内容生成",
+      "icon": "ClipboardList",
+      "description": "把零散的工作记录整理成一份结构化周报卡片，直接以卡片形式展示给用户。当用户说「帮我写周报」「整理这周做了什么」「生成周报」时使用。只整理用户提供的信息，不要编造未提到的事实；信息不足时用用户原话归纳。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "周报标题，例如「第 43 周周报」"
+          },
+          "period": {
+            "type": "string",
+            "description": "时间范围，例如 2026-10-19 ~ 2026-10-23；不确定可省略"
+          },
+          "highlights": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "本周完成的事项，每条一句话，1~10 条"
+          },
+          "risks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "风险与阻塞，没有就省略，最多 6 条"
+          },
+          "next": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "下周计划，没有就省略，最多 6 条"
+          }
+        },
+        "required": [
+          "title",
+          "highlights"
+        ],
         "additionalProperties": false
       }
     }

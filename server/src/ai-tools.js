@@ -203,6 +203,34 @@ function computeTextStats(text) {
  * ------------------------------------------------------------------ */
 
 /**
+ * 规整周报输出。
+ *
+ * ⚠️ 这里的上限必须与 `src/lib/ai/sdk/tools.ts` 的 `weeklyReportSchema` 保持一致：
+ * 前端有 zod 把关，但模型也可能绕过前端直接打到后端，所以服务端要独立兜底。
+ */
+function normalizeWeeklyReport(input) {
+  const clip = (v, max) => String(v ?? '').trim().slice(0, max);
+  const list = (arr, maxItems) =>
+    (Array.isArray(arr) ? arr : [])
+      .map((s) => clip(s, 200))
+      .filter(Boolean)
+      .slice(0, maxItems);
+
+  const title = clip(input?.title, 60);
+  if (!title) throw new Error('周报标题不能为空');
+  const highlights = list(input?.highlights, 10);
+  if (highlights.length === 0) throw new Error('周报至少要有一条完成事项');
+
+  return {
+    title,
+    period: clip(input?.period, 40),
+    highlights,
+    risks: list(input?.risks, 6),
+    next: list(input?.next, 6),
+  };
+}
+
+/**
  * 执行一个工具
  * @param {string} name 工具名
  * @param {object} input 入参
@@ -251,6 +279,8 @@ async function executeTool(name, input) {
       // 这里只保证区间与整数语义正确。
       return { min, max, result: crypto.randomInt(min, max + 1) };
     }
+    case 'weeklyReport':
+      return normalizeWeeklyReport(input);
     default:
       throw new Error(`未知工具：${name}`);
   }

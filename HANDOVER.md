@@ -152,7 +152,7 @@ zhijianxia/
 | --- | --- | --- | --- |
 | 1 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
 | 2 | **AI 引擎升级（7B 目标）** | 中 | 详情见 `docs/AI-RUNTIME-ROADMAP.md`。结论：静态内存规划 / OPFS 流式 / KV 压缩 / 核融合 / GGUF 量化档**全部依赖换引擎**，当前 ORT Web 不提供这些钩子。Phase 1（引擎边界）已完成；Phase 2 接 WebLLM。**待用户拍板三件事**：7B 预期是否下调、是否接受第二套模型格式、是否接受 ≈2 MB 依赖 |
-| 3 | **生成式 UI 工具太少** | 低 | 底座已完整（`shared/ai-tools.json` 定义 schema → 后端执行 → `tool-parts.tsx` 渲染成卡片），只有 5 个工具（计算器/时间/换算/文本统计/随机数）。要落地「说句话出周报卡片」，只需**加一个工具**，不必动架构 |
+| 3 | **生成式 UI 工具仍少** | 低 | 底座已完整、扩展路径已验证（周报工具走通全链路），但只有 6 个工具（计算器/时间/换算/文本统计/随机数/周报）。天气、文件整理这类需要外部服务或权限的工具还没做 |
 
 > **本轮已修复的既有问题**
 >
@@ -410,6 +410,21 @@ server/packages/themes/<slug>/
 **Response 约定**（`server/src/index.js` 有统一处理）：
 - 成功 → 直接返回数据
 - 失败 → `{ error: '中文说明' }`，HTTP 状态码语义化（400/401/403/404/500）
+
+**生成式 UI 工具：加一个工具要改三处（缺一不可）**
+
+| 位置 | 改什么 |
+| --- | --- |
+| `shared/ai-tools.json` | 工具描述 + JSON Schema（**前后端唯一数据源**，模型靠它知道有这个工具） |
+| `src/lib/ai/sdk/tools.ts` | zod schema + `browserTools` 的执行体（浏览器内跑） |
+| `server/src/ai-tools.js` | `executeTool` 里加一个 case（后端转发模式下由服务端跑） |
+| `src/components/ai/tool-parts.tsx` | 结果卡片：`RESULT_VIEWS` 加一项，`ICON_MAP` 加图标，`FIELD_LABELS` 补字段中文名 |
+
+⚠️ 上限/校验要在**前端 zod 与服务端执行器各写一份**（数量与长度必须一致）：
+前端可能被绕过，服务端不能假设入参已被校验。
+⚠️ 加了工具要**重启后端**才生效（`ai-stream.js` 对工具清单做模块级缓存）。
+⚠️ 工具调用目前**只在后端转发模式可用**：本地模式走 transformers.js 的
+pipeline，它不支持 function calling。
 
 **双通道分工**：
 | 通道 | 鉴权 | 用途 |

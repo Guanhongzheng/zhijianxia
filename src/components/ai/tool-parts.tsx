@@ -20,10 +20,13 @@
  * 计算器给算式与结果，时间给时钟格式，换算给对照，统计给字数分布，随机数给骰子。
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Calculator,
+  Check,
+  ClipboardList,
   Clock,
+  Copy,
   Dices,
   Ruler,
   TextCursorInput,
@@ -69,6 +72,11 @@ const FIELD_LABELS: Record<string, string> = {
   latin: '西文词',
   min: '最小值',
   max: '最大值',
+  title: '标题',
+  period: '周期',
+  highlights: '完成事项',
+  risks: '风险',
+  next: '下周计划',
 };
 
 /** 参与「结果高亮」的字段顺序（优先展示） */
@@ -168,6 +176,102 @@ function RandomResult({ output }: { output: ToolOutput }) {
   );
 }
 
+/**
+ * 周报：「一句话 → 结构化卡片」的落地形态。
+ *
+ * 这个视图是整条链路的终点 —— 模型不再吐一段带 markdown 的文本，
+ * 而是给出结构，由界面决定怎么排。所以这里除了排版，还提供
+ * **复制为 Markdown**：用户真正要的是能粘进日报系统的那份文本。
+ */
+function ReportSection({
+  label,
+  items,
+  dotClass,
+}: {
+  label: string;
+  items: string[];
+  dotClass: string;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-medium tracking-wide text-[var(--zj-muted-fg)]">
+        {label}（{items.length}）
+      </p>
+      <ul className="space-y-1">
+        {items.map((item, idx) => (
+          <li key={idx} className="flex gap-1.5 text-xs leading-relaxed text-[var(--zj-fg)]">
+            <span className={cn('mt-[5px] size-1 shrink-0 rounded-full', dotClass)} />
+            <span className="min-w-0 break-words">{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function WeeklyReportResult({ output }: { output: ToolOutput }) {
+  const title = String(output.title ?? '');
+  const period = String(output.period ?? '');
+  const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+  const highlights = asList(output.highlights);
+  const risks = asList(output.risks);
+  const next = asList(output.next);
+  const [copied, setCopied] = useState(false);
+
+  const markdown = useMemo(() => {
+    const section = (label: string, items: string[]) =>
+      items.length > 0 ? [`## ${label}`, ...items.map((i) => `- ${i}`), ''] : [];
+    return [
+      `# ${title}`,
+      period ? `> ${period}` : '',
+      '',
+      ...section('本周完成', highlights),
+      ...section('风险与阻塞', risks),
+      ...section('下周计划', next),
+    ]
+      .filter((line, i, arr) => !(line === '' && arr[i - 1] === ''))
+      .join('\n')
+      .trim();
+  }, [title, period, highlights, risks, next]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // 剪贴板在非安全上下文 / 权限被拒时不可用，静默降级即可
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-[var(--zj-fg)]">{title}</p>
+        {period ? (
+          <p className="mt-0.5 text-[11px] text-[var(--zj-muted-fg)]">{period}</p>
+        ) : null}
+      </div>
+
+      <ReportSection label="本周完成" items={highlights} dotClass="bg-[var(--zj-accent)]" />
+      <ReportSection label="风险与阻塞" items={risks} dotClass="bg-amber-500" />
+      <ReportSection label="下周计划" items={next} dotClass="bg-[var(--zj-muted-fg)]" />
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="flex items-center gap-1 rounded-md border border-[var(--zj-border)] px-2 py-1 text-[11px] text-[var(--zj-muted-fg)] transition-colors hover:bg-[var(--zj-muted)] hover:text-[var(--zj-fg)]"
+        >
+          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+          {copied ? '已复制' : '复制 Markdown'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 工具名 → 结果组件 */
 const RESULT_VIEWS: Record<string, (props: { output: ToolOutput }) => React.ReactElement> = {
   calculator: CalculatorResult,
@@ -175,6 +279,7 @@ const RESULT_VIEWS: Record<string, (props: { output: ToolOutput }) => React.Reac
   unitConvert: ConvertResult,
   textStats: StatsResult,
   randomNumber: RandomResult,
+  weeklyReport: WeeklyReportResult,
 };
 
 /* -------------------------------------------------------------------------- */
@@ -288,6 +393,7 @@ export function ToolPartView({ part }: ToolPartViewProps) {
 /** shared/ai-tools.json 里 icon 字段（lucide 名）→ 组件 */
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   Calculator,
+  ClipboardList,
   Clock,
   Dices,
   Ruler,
