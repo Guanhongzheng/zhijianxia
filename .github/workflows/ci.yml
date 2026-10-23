@@ -1,0 +1,102 @@
+# 智简匣 · 最小 CI 门禁
+#
+# 目的不是「大而全」，而是**让红灯可信**：本地能跑绿的这几层，
+# 每次 push / PR 自动再跑一遍，避免「改了 A 弄坏 B」靠人肉发现。
+#
+# 刻意**没放**进门的（各有理由，别当成遗漏）：
+#   - `npm run e2e`（79 项）：需要真实浏览器 + 约 3 分钟，且默认连 3100 端口；
+#   - `npm run theme:ws`（3 项）：会创建/删除测试主题目录，跑完可能连带停掉后端
+#     （HANDOVER §6 坑 J），不适合与其它测试挤在同一个 job；
+#   - `npm run e2e:offline`（8 项）：playwright-core 不带浏览器，runner 上要先装。
+#   - `npm run theme:verify`（11 项）：同样是浏览器端到端。
+#
+# 契约测试与路径穿越测试都**直连 127.0.0.1:8787**，所以必须先起后端。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支连续 push 时，取消上一次未跑完的运行，省 runner 也省等待
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 类型 / 契约 / 主题 / 插件 / 构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ZJ_API: http://127.0.0.1:8787
+      # 关掉 Next 的遥测（CI 里没有意义，还会拖慢首条请求）
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      # `plugins:verify` 的最后一段会读 `dist-plugins/*.plugin` 并断言恰好 6 个 ——
+      # 而 `dist-plugins/` 是 gitignore 的构建产物，干净 checkout 里根本不存在。
+      # 本机之所以一直能跑绿，是因为它早就在那里了。这里必须先构建。
+      - name: 打包插件产物
+        run: npm run plugins:build
+
+      # ---------------------------------------------------------------
+      # 第一层：不依赖后端，先跑 —— 挂了就没必要再花时间起服务
+      # ---------------------------------------------------------------
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 主题意图搜索（21 项，纯函数）
+        run: npm run theme:search
+
+      - name: 插件与内核（35 项）
+        run: npm run plugins:verify
+
+      # ---------------------------------------------------------------
+      # 第二层：起后端，跑接口契约与安全防护
+      # ---------------------------------------------------------------
+      - name: 初始化数据库并启动后端
+        run: |
+          npm run server:init
+          node server/src/index.js > /tmp/zj-server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf "$ZJ_API/api/themes" > /dev/null; then
+              echo "后端已就绪（等待 ${i}s）"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::后端 30 秒内未就绪"
+          cat /tmp/zj-server.log
+          exit 1
+
+      - name: 接口契约（68 项）
+        run: npm run contract
+
+      - name: 路径穿越防护（17 项）
+        run: npm run theme:security
+
+      # ---------------------------------------------------------------
+      # 第三层：生产构建
+      #
+      # 这一层专门兜「只在 build 才暴露」的问题 —— 静态导出 + useSearchParams
+      # 缺 Suspense 就是典型（HANDOVER §6 坑 L：dev 下正常，build 直接失败）。
+      # ---------------------------------------------------------------
+      - name: 生产构建
+        run: npm run build
+
+      - name: 失败时打印后端日志
+        if: failure()
+        run: cat /tmp/zj-server.log || true

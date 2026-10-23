@@ -15,7 +15,7 @@
 | 分支 / 远端 | `main` / `https://github.com/Guanhongzheng/zhijianxia.git` |
 | 前端 | Next.js（`localhost:3000`） |
 | 后端 | Express 4 + ws 8 + `node:sqlite`（`127.0.0.1:8787`） |
-| 规模 | 后端 22 个 JS · 前端 104 个 TS/TSX · 测试脚本 15 个 |
+| 规模 | 后端 22 个 JS · 前端 105 个 TS/TSX · 测试脚本 17 个 |
 | 工作区 | 交接时干净且与 origin/main 同步；当前以 `git status` 为准 |
 
 **产品定位一句话**：核心能力（离线 AI、插件、主题、备忘录）**全部在浏览器本地跑，不需要后端**；只有好友/群聊/公告/后端转发 API 才需要启动局域网后端。
@@ -149,9 +149,8 @@ zhijianxia/
 | # | 事项 | 优先级 | 说明 |
 | --- | --- | --- | --- |
 | 1 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
-| 2 | **无 CI** | 低 | 测试全靠手动跑。`npm run typecheck && npm run contract && npm run theme:search` 可作为最小门禁 |
-| 3 | **本机 AI 配置自相矛盾** | 中 | 当前 `capabilities.chat.provider=deepseek`，但 `base=https://api.openai.com/v1`、`model=gpt-4o-mini`（后端 chat 的 base/model 读历史键，provider 读 `ai_cap_chat`，两个写入方各改一半就会这样）。**症状**：`hasKey=true` 却对话 401/502，且 OpenAI 域名国内不可达。修法：在「设置 · AI」重选服务商后重填地址，或直接 PUT `{capability:'chat', provider:'deepseek', base:'https://api.deepseek.com/v1', model:'deepseek-chat'}` |
-| 4 | **列表通道缺 `scheme` 字段** | 低 | `theme.json` 有 `scheme`（dark/light），但 `/api/themes` 列表响应没带 → 前端无法按明暗精确筛选，只能靠 tags。补一个字段即可（scanner + 类型 + 测试） |
+| 2 | **本机 AI 配置自相矛盾** | 中 | 当前 `capabilities.chat.provider=deepseek`，但 `base=https://api.openai.com/v1`、`model=gpt-4o-mini`（后端 chat 的 base/model 读历史键，provider 读 `ai_cap_chat`，两个写入方各改一半就会这样）。**症状**：`hasKey=true` 却对话 401/502，且 OpenAI 域名国内不可达。修法：在「设置 · AI」重选服务商后重填地址，或直接 PUT `{capability:'chat', provider:'deepseek', base:'https://api.deepseek.com/v1', model:'deepseek-chat'}` |
+| 3 | **列表通道缺 `scheme` 字段** | 低 | `theme.json` 有 `scheme`（dark/light），但 `/api/themes` 列表响应没带 → 前端无法按明暗精确筛选，只能靠 tags。补一个字段即可（scanner + 类型 + 测试） |
 
 > **本轮已修复（原待办 1、4）**
 >
@@ -189,11 +188,34 @@ npm run contract               # 契约测试，约 10s，当前 68/68
 npm run theme:search           # 意图搜索 21 项，约 1s（纯函数，不依赖前后端）
 npm run theme:security         # 路径穿越 17 项，约 5s
 npm run theme:ws               # WS 推送 3 项，约 15s
-npm run plugins:verify         # 插件 35 项，约 10s
+npm run plugins:verify         # 插件 35 项，约 10s（**依赖 dist-plugins 产物**，见下）
 npm run e2e:offline            # 离线 E2E 8 项
 npm run e2e                    # 完整 E2E 79 项，约 3min（需前后端都在跑）
 npm run theme:verify           # 浏览器端到端 11 项（需前后端都在跑）
 ```
+
+> ⚠️ `plugins:verify` 的 [5/5] 会读 `dist-plugins/*.plugin` 并断言恰好 6 个。
+> 该目录是 gitignore 的构建产物 —— **干净 checkout 上必须先 `npm run plugins:build`**，
+> 否则 ENOENT 直接崩。本机一直能跑绿只是因为那个目录早就在了。
+
+### CI（`.github/workflows/ci.yml`）
+
+push 到 main / 开 PR / 手动触发时，按「先便宜后昂贵」的顺序跑：
+`typecheck` → `theme:search` → `plugins:build` + `plugins:verify` →
+起后端（`server:init` + 等 `/api/themes` 返回 200）→ `contract` → `theme:security` → `next build`。
+
+刻意没进门的：`e2e` / `e2e:offline` / `theme:verify` / `theme:ws`（前三个要真实浏览器，
+最后一个会连带停掉后端、见 §6 坑 J）。
+
+### 隔离构建（不打扰 dev server）
+
+```bash
+ZJ_DIST_DIR=.next-ci npm run build   # 产物写 .next-ci/，dev server 的 .next 不受影响
+```
+
+`next.config.ts` 读取该环境变量设置 `distDir`（`.next-ci/` 已 gitignore）。
+注意：`next build` 会**自动改写 `tsconfig.json`** 的 `include`，追加
+`.next-ci/types/**`；构建完记得 `git checkout -- tsconfig.json`，别把它提交进去。
 
 ### 主题相关
 
@@ -224,8 +246,9 @@ node scripts/make-aurora-assets.cjs # 重新生成深空琉璃的极光素材
 **B. `next build` 会被 safe-delete 批量删除守卫拦住**
 Next 内部要清 `.next/trace-build` 等目录，目录内文件数 ≥ 50 就触发
 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`。解法：`rm -rf .next` 整体删（可再生），
-或用 `ZJ_DIST_DIR` 换目录。
+或用 `ZJ_DIST_DIR=.next-ci npm run build`（该环境变量现已**正式支持**，见 §5）。
 **注意**：`npx next build | head -N` 的退出码是 `head` 的，不是 build 的 —— 会掩盖失败。
+**另注意**：构建会改写 `tsconfig.json` 的 `include`，记得还原。
 
 **C. 同一 HTTP server 挂两个 WebSocketServer → 握手 400**
 每个 WSS 都注册自己的 upgrade 监听，`shouldHandle` 不匹配时直接 **abort socket**。
