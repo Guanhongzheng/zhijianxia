@@ -5,6 +5,7 @@
 
 import { modelCache, clearModelCache, deleteModelFiles, listCachedFiles } from './model-cache';
 import { generateInWorker, loadInWorker, unloadInWorker } from './ai-client';
+import { getSystemPrompt, sanitizeUserText } from '@/lib/prompts';
 import {
   DEFAULT_LOCAL_MODEL,
   DEFAULT_MODEL_SOURCE,
@@ -301,6 +302,21 @@ export function describeError(err: unknown, device?: RuntimeDevice): string {
 
   const text = Array.from(new Set(parts.filter(Boolean))).join(' | ');
 
+  // 推理进程被终止（Emscripten abort / OOM）—— 与模型文件、驱动都无关。
+  //
+  // `Aborted(). Build with -sASSERTIONS for more info.` 是 emscripten 的兜底文案，
+  // 本身不含任何线索；真实原因几乎总是「内存装不下」：
+  //   - WASM：32 位堆上限 4 GiB，1.5B q4 权重 1.7 GB + 激活值 + KV cache 会顶到天花板；
+  //   - WebGPU：显存被其它标签页挤占，或设备被系统回收（device lost）。
+  // 放在 WebGPU / wasm 分支之前判定：这种文案里两个关键词都不会出现。
+  if (/Aborted\(\)|memory access out of bounds|out of memory|OOM|device lost/i.test(text)) {
+    const hint =
+      device === 'webgpu'
+        ? '显卡侧内存不足或 WebGPU 设备被系统回收。建议：关闭其它占用显存的页面/程序后重试，或改用更小的模型（0.5B–0.6B 级）'
+        : '内存不足。WASM 堆上限约 4 GiB，该模型加上激活值与 KV cache 已超出。建议改用更小的模型（0.5B–0.6B 级），或改回 WebGPU 运行时';
+    return `${text}（推理进程被终止：${hint}）`;
+  }
+
   // 权重文件 404 —— 通常是「该模型仓库没有这个精度的权重」
   // 典型场景：为 WebGPU 指定 fp16，但模型仓库只发布了 q4 量化权重
   if (/HTTP 404|status:\s*404|not found/i.test(text)) {
@@ -511,7 +527,7 @@ export async function loadLocalModel(
       lastRuntime = runtimes[runtimes.length - 1];
       const message = describeError(err, lastRuntime.device);
       console.error(
-        `[zj-ai] 模型加载失败（源：${primary.name} / 运行时：lastRuntime.device / 精度：${lastRuntime.dtype}）：`,
+        `[zj-ai] 模型加载失败（源：${primary.name} / 运行时：${lastRuntime.device} / 精度：${lastRuntime.dtype}）：`,
         message,
         err,
       );
@@ -608,47 +624,51 @@ export async function unloadLocalModel() {
  *
  * 不同模型族的模板标记并不相同，若一律用 Qwen 的 ChatML，
  * 换用其它模型后模型会看不懂提示词，输出质量急剧下降。
+ *
+ * ⚠️ 每条消息的内容必须经 `sanitizeUserText` 处理：
+ * ChatML 靠 `<|im_start|>role` 切分角色，用户在输入框里打出这些标记
+ * 就能关闭当前轮、伪造 system 轮。本地推理没有服务端兜底，这是最现实的注入路径。
  */
 function applyChatTemplate(
   messages: ChatMessage[],
   family: ModelFamily,
 ): string {
+  const render = (m: ChatMessage) => {
+    const role =
+      m.role === 'assistant'
+        ? 'assistant'
+        : m.role === 'system'
+          ? 'system'
+          : 'user';
+    return `<|im_start|>${role}\n${sanitizeUserText(m.content)}<|im_end|>`;
+  };
+
   // Qwen / ChatML 系
   if (family === 'qwen' || family === 'chatml') {
-    return (
-      messages
-        .map((m) => {
-          const role =
-            m.role === 'assistant'
-              ? 'assistant'
-              : m.role === 'system'
-                ? 'system'
-                : 'user';
-          return `<|im_start|>${role}\n${m.content}<|im_end|>`;
-        })
-        .join('\n') + '<|im_start|>assistant\n'
-    );
+    return messages.map(render).join('\n') + '<|im_start|>assistant\n';
   }
 
-  // SmolLM2 系：<|im_start|>role\ncontent<|im_end|>，与 ChatML 同构，
-  // 但结尾不带 assistant 起始标记
+  // SmolLM2 系：标记与 ChatML 同构，同样以 assistant 起始标记收尾
   if (family === 'smol') {
-    return (
-      messages
-        .map((m) => {
-          const role =
-            m.role === 'assistant'
-              ? 'assistant'
-              : m.role === 'system'
-                ? 'system'
-                : 'user';
-          return `<|im_start|>${role}\n${m.content}<|im_end|>`;
-        })
-        .join('\n') + '<|im_start|>assistant\n'
-    );
+    return messages.map(render).join('\n') + '<|im_start|>assistant\n';
   }
 
   return '';
+}
+
+/**
+ * 补上系统提示词。
+ *
+ * 历史背景：本地模式此前**完全没有**系统提示词，而后端模式有一整套规则，
+ * 于是同一句话在两种模式下表现不一致（后端会拒绝编造、本地会瞎答）。
+ * 现在两边渲染同一份 `shared/prompts.json`，只是选的模板不同：
+ * 本地用 `assistant.system.local`（明确声明「没有工具能力」，避免小模型乱编工具结果）。
+ *
+ * 调用方已显式传 system 消息时不再覆盖 —— 尊重调用方的意图。
+ */
+function ensureSystemPrompt(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.some((m) => m.role === 'system')) return messages;
+  return [{ role: 'system', content: getSystemPrompt('local') }, ...messages];
 }
 
 /** 解析模型所属模板族 */
@@ -665,7 +685,7 @@ export async function localChat(
 ): Promise<string> {
   const { maxTokens = 512, temperature = 0.7 } = opts;
   const params = await resolveWorkerParams();
-  const prompt = applyChatTemplate(messages, resolveFamily(params.modelId));
+  const prompt = applyChatTemplate(ensureSystemPrompt(messages), resolveFamily(params.modelId));
 
   // 同样走 Worker —— 与 localChatStream 保持一致，
   // 且保证模型只存在于 Worker 一份（主线程不再建第二份 session）。
@@ -732,7 +752,7 @@ export async function* localChatStream(
   // 主线程全程不碰大 buffer，既不卡也不占内存。
   const params = await resolveWorkerParams();
 
-  const prompt = applyChatTemplate(messages, resolveFamily(params.modelId));
+  const prompt = applyChatTemplate(ensureSystemPrompt(messages), resolveFamily(params.modelId));
 
   /** 待消费的增量队列 */
   const queue: string[] = [];

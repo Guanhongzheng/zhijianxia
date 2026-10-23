@@ -36,9 +36,11 @@ export const SCOPE = [
   'src/lib/ai/device-tier.ts',
   'src/lib/ai/local-models.ts',
   'src/lib/i18n/messages.ts',
+  'src/lib/prompts/render.ts',
   'server/src/theme-store/scheme.js',
   'server/src/routes/registry-validate.js',
   'server/src/telemetry.js',
+  'server/src/prompts.js',
 ];
 
 /** 参与覆盖率合并的单元测试脚本 */
@@ -47,6 +49,7 @@ const TEST_SCRIPTS = [
   'scripts/ai-budget-test.mjs',
   'scripts/theme-pack-test.mjs',
   'scripts/telemetry-test.mjs',
+  'scripts/prompt-test.mjs',
 ];
 
 /** 门槛：与需求一致，四项都要求 ≥80% */

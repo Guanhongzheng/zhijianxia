@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "智简匣 · 本地离线 AI 优先的局域网工具箱 · 后端接口",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "本文件由 `npm run api:docs` 从路由源码自动生成，**请勿手工编辑**。\n需要补充说明时改 `docs/openapi.meta.json`，再重新生成。\n\n鉴权方式：先 `POST /api/auth/login` 拿到 token，再在请求头带 `Authorization: Bearer <token>`。"
   },
   "servers": [
@@ -199,7 +199,7 @@
             "description": "未登录或登录已过期"
           }
         },
-        "x-zj-source": "server/src/routes/ai-stream.js:203"
+        "x-zj-source": "server/src/routes/ai-stream.js:202"
       }
     },
     "/api/auth/login": {

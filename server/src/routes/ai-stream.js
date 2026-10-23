@@ -38,6 +38,7 @@ const { readCapabilityConfig, readConfig } = require('./ai-proxy');
 const { isValidCapability, DEFAULT_CAPABILITY, capabilityName } = require('../providers');
 const { executeTool } = require('../ai-tools');
 const { describeAiError } = require('../ai-errors');
+const { getSystemPrompt } = require('../prompts');
 
 const {
   streamText,
@@ -57,16 +58,14 @@ const router = express.Router();
 /** 单次请求最多允许的「模型回合」数：1 次回答 + 最多 4 轮工具调用 */
 const MAX_STEPS = 5;
 
-/** 系统提示词：约束工具使用与回答风格 */
-const SYSTEM_PROMPT = [
-  '你是「智简匣」内置的 AI 助手，运行在用户的本地应用里。',
-  '',
-  '回答要求：',
-  '1. 默认使用简体中文回答，简洁、直接，不写客套话。',
-  '2. 需要算数、单位换算、当前时间、文本统计、随机数时，必须调用对应工具，不要自己心算。',
-  '3. 工具返回结果后，用一句话把结论说清楚，不要重复粘贴原始数据。',
-  '4. 不确定的事直接说不确定，不要编造。',
-].join('\n');
+/**
+ * 系统提示词：与本地推理共用 `shared/prompts.json`（`assistant.system`）。
+ *
+ * 此前是本文件里的一段硬编码常量，而本地模式**根本没有系统提示词** ——
+ * 同一句话在两种模式下风格与边界不一致。现在"写什么"收在共享文件里，
+ * 这里只负责渲染。
+ */
+const SYSTEM_PROMPT = getSystemPrompt('tools');
 
 /* ------------------------------------------------------------------ *
  * 工具清单加载

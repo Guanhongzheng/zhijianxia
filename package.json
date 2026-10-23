@@ -1,6 +1,6 @@
 {
   "name": "zhijianxia",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "智简匣 · 本地离线 AI 优先的局域网工具箱（前端可独立运行，后端可选）",
   "engines": {
@@ -28,8 +28,9 @@
     "theme:search": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/theme-search-test.mjs",
     "theme:pack": "node scripts/theme-pack-test.mjs",
     "telemetry": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/telemetry-test.mjs",
+    "prompt:test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/prompt-test.mjs",
     "ai:budget": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ai-budget-test.mjs",
-    "test:unit": "npm run theme:search && npm run ai:budget && npm run theme:pack && npm run telemetry",
+    "test:unit": "npm run theme:search && npm run ai:budget && npm run theme:pack && npm run telemetry && npm run prompt:test",
     "coverage": "node scripts/coverage.mjs",
     "api:docs": "node scripts/gen-openapi.mjs",
     "theme:security": "node scripts/theme-security-test.mjs",
