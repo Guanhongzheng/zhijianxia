@@ -15,7 +15,7 @@
 | 分支 / 远端 | `main` / `https://github.com/Guanhongzheng/zhijianxia.git` |
 | 前端 | Next.js（`localhost:3000`） |
 | 后端 | Express 4 + ws 8 + `node:sqlite`（`127.0.0.1:8787`） |
-| 规模 | 后端 22 个 JS · 前端 105 个 TS/TSX · 测试脚本 17 个 |
+| 规模 | 后端 22 个 JS · 前端 106 个 TS/TSX · 测试脚本 18 个 |
 | 工作区 | 交接时干净且与 origin/main 同步；当前以 `git status` 为准 |
 
 **产品定位一句话**：核心能力（离线 AI、插件、主题、备忘录）**全部在浏览器本地跑，不需要后端**；只有好友/群聊/公告/后端转发 API 才需要启动局域网后端。
@@ -52,8 +52,9 @@ zhijianxia/
 │   ├── app/                      Next.js 路由
 │   ├── components/cards/         11 个功能面板（见下表）
 │   ├── lib/
-│   │   ├── ai/                   17 个模块：local-engine / ai-worker / chain /
-│   │   │                         model-download / ort-setup / scheduler / sdk/
+│   │   ├── ai/                   18 个模块：local-engine / ai-worker / chain /
+│   │   │                         model-download / ort-setup / scheduler /
+│   │   │                         device-profile（GPU 预算）/ sdk/
 │   │   ├── backend/              后端 API 客户端（auth / registry / theme-plaza…）
 │   │   ├── theme/                protocol.ts / packager.ts / types.ts / search.ts
 │   │   └── storage/  registry-cache.ts  utils.ts
@@ -151,6 +152,7 @@ zhijianxia/
 | 1 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
 | 2 | **本机 AI 配置自相矛盾** | 中 | 当前 `capabilities.chat.provider=deepseek`，但 `base=https://api.openai.com/v1`、`model=gpt-4o-mini`（后端 chat 的 base/model 读历史键，provider 读 `ai_cap_chat`，两个写入方各改一半就会这样）。**症状**：`hasKey=true` 却对话 401/502，且 OpenAI 域名国内不可达。修法：在「设置 · AI」重选服务商后重填地址，或直接 PUT `{capability:'chat', provider:'deepseek', base:'https://api.deepseek.com/v1', model:'deepseek-chat'}` |
 | 3 | **列表通道缺 `scheme` 字段** | 低 | `theme.json` 有 `scheme`（dark/light），但 `/api/themes` 列表响应没带 → 前端无法按明暗精确筛选，只能靠 tags。补一个字段即可（scanner + 类型 + 测试） |
+| 4 | **AI 引擎升级（7B 目标）** | 中 | 详情见 `docs/AI-RUNTIME-ROADMAP.md`。结论：静态内存规划 / OPFS 流式 / KV 压缩 / 核融合 / GGUF 量化档**全部依赖换引擎**，当前 ORT Web 不提供这些钩子。路径是先抽 `LocalEngine` 接口（行为不变），再接 WebLLM。**待用户拍板三件事**：7B 预期是否下调、是否接受第二套模型格式、是否接受 ≈2 MB 依赖 |
 
 > **本轮已修复（原待办 1、4）**
 >
@@ -162,7 +164,7 @@ zhijianxia/
 >    现已改为「先快照、`try/finally` 还原、并断言还原成功」，body 不带 apiKey 故不碰 Key。
 >    实测：先把配置改成哨兵值（deepseek/45000/0.3）→ 跑测试 → 配置逐字段仍是哨兵值。
 >
-> 现 **68/68**（新增 1 项「契约测试不留副作用」）。
+> 现 **69/69**（新增「契约测试不留副作用」与「GPU 预算按限额计算」两项）。
 
 ---
 
@@ -184,8 +186,9 @@ npm run server                 # → http://127.0.0.1:8787
 
 ```bash
 npm run typecheck              # tsc，约 20s
-npm run contract               # 契约测试，约 10s，当前 68/68
+npm run contract               # 契约测试，约 10s，当前 69/69
 npm run theme:search           # 意图搜索 21 项，约 1s（纯函数，不依赖前后端）
+npm run ai:budget              # GPU 权重预算 12 项，约 1s（纯函数）
 npm run theme:security         # 路径穿越 17 项，约 5s
 npm run theme:ws               # WS 推送 3 项，约 15s
 npm run plugins:verify         # 插件 35 项，约 10s（**依赖 dist-plugins 产物**，见下）
@@ -355,6 +358,17 @@ console 消息文本里只有「404」，不含「favicon」。要用 `m.locatio
   再跑 `npm run server:init`，比清本机数据库安全得多。
 → CI 的价值正在这里：它永远从「干净 checkout + 空数据库」开始。
 
+**V. 硬编码的「设备上限」必然两头都错**
+`WEBGPU_MAX_Q4_BYTES = 1 GiB` 是从**一台**机器实测出来的经验值，却被当成规范：
+- 报 256 MiB 的设备（部分集显 / 移动端）会先放行、下完几百 MB 才崩；
+- 报 4 GiB 的设备本可跑 1.7 GB 的 1.5B，却被常量误拦到 WASM。
+
+现改为读 `GPUAdapter.limits`：`min(maxBufferSize, maxStorageBufferBindingSize) × 50%`。
+系数 50% 让主流 2 GiB 设备算出正好 1 GiB（历史行为不变），只修正两端。
+判据在 `src/lib/ai/device-profile.ts`（纯函数，`npm run ai:budget` 覆盖）。
+**通用教训**：凡是「设备/环境上限」类常量，都应该读实际配额 + 留比例余量，
+而不是把某次实测值当成普适红线。
+
 ---
 
 ## 7. 主题包格式（新增主题必读）
@@ -405,7 +419,7 @@ server/packages/themes/<slug>/
 
 如果接手后要继续推进，建议：
 
-1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:search` / `theme:security` / `plugins:verify` 应分别是 0 错 / 68/68 / 21/21 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
+1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:search` / `theme:security` / `plugins:verify` 应分别是 0 错 / 69/69 / 21/21 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
 2. **按需推进**：想扩功能就从 §4 表里挑；想优化就先读 §6 相关坑，避免重复踩。
 3. **改完照 §5 从短到长复跑**，注意坑 J（`theme:ws` 会连带停后端）。
 

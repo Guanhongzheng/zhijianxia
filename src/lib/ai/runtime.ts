@@ -18,7 +18,13 @@
  * 故 WebGPU 走 fp16，WASM 走 q4（体积小、无精度依赖）。
  */
 
-import { WEBGPU_MAX_Q4_BYTES } from './local-models';
+import {
+  computeGpuWeightBudget,
+  fitsGpuBudget,
+  formatBytes,
+  readSingleAllocBytes,
+  type GpuLimits,
+} from './device-profile';
 
 /** 用户可选择的运行时偏好 */
 export type RuntimePref = 'auto' | 'webgpu' | 'wasm';
@@ -97,6 +103,13 @@ export interface RuntimeInfo {
   hasWebGpuAdapter: boolean;
   /** 适配器信息摘要 */
   adapterInfo?: string;
+  /**
+   * 本机 GPU 可用于**权重**的预算（字节）——由 `GPUAdapter.limits` 实测得出。
+   * 权重必须整个放得进单个 buffer（ORT WebGPU EP 不分块），故这是硬门槛。
+   */
+  gpuWeightBudgetBytes: number;
+  /** GPU 单次分配上限（maxBufferSize 与 maxStorageBufferBindingSize 取小），用于界面解释 */
+  gpuSingleAllocBytes?: number;
   /** 本次实际选中的设备 */
   device: RuntimeDevice;
   /** 本次实际选中的权重精度 */
@@ -141,6 +154,8 @@ async function probeWebGpu(): Promise<{
   hasWebGpuApi: boolean;
   hasWebGpuAdapter: boolean;
   adapterInfo?: string;
+  /** 适配器限额 —— 决定「多大的权重能上 GPU」，见 device-profile.ts */
+  limits?: GpuLimits;
 }> {
   // SSR / 老浏览器：直接判定不支持
   if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
@@ -151,6 +166,7 @@ async function probeWebGpu(): Promise<{
     gpu: {
       requestAdapter: () => Promise<{
         info?: { vendor?: string; architecture?: string; description?: string };
+        limits?: GpuLimits;
         requestDevice: () => Promise<unknown>;
       } | null>;
     };
@@ -189,7 +205,8 @@ async function probeWebGpu(): Promise<{
     return { hasWebGpuApi: true, hasWebGpuAdapter: false, adapterInfo };
   }
 
-  return { hasWebGpuApi: true, hasWebGpuAdapter: true, adapterInfo };
+  // limits 在个别实现里可能缺失；缺了就让 device-profile 退回保守常量
+  return { hasWebGpuApi: true, hasWebGpuAdapter: true, adapterInfo, limits: adapter.limits };
 }
 
 /**
@@ -345,15 +362,23 @@ export async function resolveRuntime(
     }
   }
 
-  // 权重体积超过 GPU 单缓冲上限 → 必然加载失败，直接改走 WASM。
+  // 权重体积超过**本机 GPU 的实测预算** → 必然加载失败，直接改走 WASM。
   // 放在这里（而不是等失败后降级）是因为失败发生在下载完 1.7GB 之后，
   // 让用户白等几分钟才看到失败，体验极差。
+  //
+  // 预算来自 GPUAdapter.limits（见 device-profile.ts），不再是写死的 1 GiB：
+  // 低端设备报 256 MB 时提前拦住，高端设备报 4 GiB 时放行更大的模型。
+  const gpuBudget = computeGpuWeightBudget(probe.limits);
+  const singleAlloc = readSingleAllocBytes(probe.limits);
+
   let sizeBlocked = false;
   if (webgpuUsable && modelQ4Bytes !== undefined) {
-    if (modelQ4Bytes > WEBGPU_MAX_Q4_BYTES) {
+    if (!fitsGpuBudget(modelQ4Bytes, gpuBudget)) {
       webgpuUsable = false;
       sizeBlocked = true;
-      smokeReason = `权重 ${(modelQ4Bytes / 1024 / 1024).toFixed(0)} MB 超过 GPU 单缓冲上限 ${(WEBGPU_MAX_Q4_BYTES / 1024 / 1024).toFixed(0)} MB`;
+      smokeReason =
+        `权重 ${formatBytes(modelQ4Bytes)} 超过本机 GPU 可用预算 ${formatBytes(gpuBudget)}` +
+        (singleAlloc ? `（单次分配上限 ${formatBytes(singleAlloc)} 的一半）` : '');
     }
   }
 
@@ -394,7 +419,11 @@ export async function resolveRuntime(
   }
 
   const info: RuntimeInfo = {
-    ...probe,
+    hasWebGpuApi: probe.hasWebGpuApi,
+    hasWebGpuAdapter: probe.hasWebGpuAdapter,
+    ...(probe.adapterInfo ? { adapterInfo: probe.adapterInfo } : {}),
+    gpuWeightBudgetBytes: gpuBudget,
+    ...(singleAlloc !== undefined ? { gpuSingleAllocBytes: singleAlloc } : {}),
     device,
     dtype,
     pref: effectivePref,

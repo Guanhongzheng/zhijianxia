@@ -26,6 +26,7 @@
     "themes:check": "node scripts/theme-tools/theme-check.mjs",
     "themes:verify": "node scripts/theme-tools/theme-verify.mjs",
     "theme:search": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/theme-search-test.mjs",
+    "ai:budget": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/ai-budget-test.mjs",
     "theme:security": "node scripts/theme-security-test.mjs",
     "theme:ws": "node scripts/theme-ws-test.mjs",
     "theme:verify": "node scripts/verify-theme-plaza.mjs",

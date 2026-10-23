@@ -69,25 +69,35 @@ export interface LocalModelOption {
 }
 
 /**
- * WebGPU 可承载的 q4 权重上限（字节）。
+ * 设备未暴露 GPU limits 时的**回落**判据（字节）。
  *
- * 依据：GPU `maxBufferSize` = 2 GiB，ORT WebGPU EP 单 buffer 分配整个权重，
- * 留一半余量给激活值、KV cache 与工作区。实测 794 MB 通过、1.7 GB 失败，
- * 故把红线设在 1 GiB —— 该线以内都验证过可用。
+ * ⚠️ 现在真正的判据是 `device-profile.ts` 里按 `GPUAdapter.limits` 算出的
+ * 动态预算；这个常量只在拿不到 limits 时兜底。保留它是因为：
+ * 1. 老浏览器 / 受限环境读不到 limits，需要一个保守值；
+ * 2. 它等于「2 GiB 单次分配上限 × 50%」，与历史行为完全一致，
+ *    升级后已验证过的设备不会被误伤。
+ *
+ * 实测依据：GPU `maxBufferSize` = 2 GiB，ORT WebGPU EP 单 buffer 分配整个权重，
+ * 留一半余量给激活值、KV cache 与工作区。794 MB 通过、1.7 GB 失败。
  */
 export const WEBGPU_MAX_Q4_BYTES = 1024 * 1024 * 1024;
 
 /**
  * 判断该模型能否走 WebGPU。
  *
+ * @param m 模型项
+ * @param budgetBytes 本机 GPU 权重预算（来自 `resolveRuntime().gpuWeightBudgetBytes`）；
+ *                    不传则用回落常量，保持旧行为。
+ *
  * 未知体积（q4Bytes 缺失）时返回 true —— 宁可试一把，
  * 因为多数模型都在阈值内；只有明确超限才提前拦下。
- *
- * 传入 undefined（模型不在清单里）同样按「不拦」处理。
  */
-export function canUseWebGpu(m: LocalModelOption | undefined): boolean {
+export function canUseWebGpu(
+  m: LocalModelOption | undefined,
+  budgetBytes: number = WEBGPU_MAX_Q4_BYTES,
+): boolean {
   if (!m || m.q4Bytes === undefined) return true;
-  return m.q4Bytes <= WEBGPU_MAX_Q4_BYTES;
+  return m.q4Bytes <= budgetBytes;
 }
 
 /** 默认模型 —— 体积小、中文能力够用 */

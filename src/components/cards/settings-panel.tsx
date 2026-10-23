@@ -215,8 +215,15 @@ function AiEngineSettings() {
    * 也就是说「WebGPU 可用」≠「这个模型能用 WebGPU」。
    */
   const activeRuntime = aiState.runtime ?? runtimeInfo;
+  /**
+   * 本机 GPU 的权重预算。
+   *
+   * 优先用运行时实测值（来自 `GPUAdapter.limits`）；还没探测过时退回历史常量，
+   * 保证「检测中」这一帧不会把可用的模型误标成不可用。
+   */
+  const gpuBudget = activeRuntime?.gpuWeightBudgetBytes ?? WEBGPU_MAX_Q4_BYTES;
   /** 当前所选模型能否走 WebGPU */
-  const selectedGpuOk = canUseWebGpu(findModelOption(modelId));
+  const selectedGpuOk = canUseWebGpu(findModelOption(modelId), gpuBudget);
   /** 面板上应当展示的设备 —— 超限时直接显示 WASM，避免误导 */
   const shownDevice: 'webgpu' | 'wasm' =
     activeRuntime?.device === 'webgpu' && !selectedGpuOk ? 'wasm' : (activeRuntime?.device ?? 'wasm');
@@ -322,7 +329,7 @@ function AiEngineSettings() {
               const dl = downloadStates[m.id];
               const downloaded = dl?.downloaded === true;
               const isDownloading = downloadingId === m.id;
-              const gpuOk = canUseWebGpu(m);
+              const gpuOk = canUseWebGpu(m, gpuBudget);
               return (
                 <div
                   key={m.id}
@@ -547,7 +554,11 @@ function AiEngineSettings() {
               {shownDevice === 'webgpu'
                 ? `已启用 WebGPU 加速${activeRuntime?.adapterInfo ? `（${activeRuntime.adapterInfo}）` : ''}，模型在显卡上推理。`
                 : !selectedGpuOk
-                  ? `所选模型权重约 ${Math.round((findModelOption(modelId)?.q4Bytes ?? 0) / 1024 / 1024)} MB，超过 GPU 单缓冲上限（${Math.round(WEBGPU_MAX_Q4_BYTES / 1024 / 1024)} MB），只能使用 WASM 推理。`
+                  ? `所选模型权重约 ${Math.round((findModelOption(modelId)?.q4Bytes ?? 0) / 1024 / 1024)} MB，超过本机 GPU 可用预算（${Math.round(gpuBudget / 1024 / 1024)} MB${
+                      activeRuntime?.gpuSingleAllocBytes
+                        ? `，单次分配上限 ${Math.round(activeRuntime.gpuSingleAllocBytes / 1024 / 1024)} MB`
+                        : ''
+                    }），只能使用 WASM 推理。`
                   : runtimeInfo && !runtimeInfo.hasWebGpuApi
                     ? '当前浏览器不支持 WebGPU，将使用 WASM 推理。建议使用较新版本的 Edge / Chrome 以启用 GPU 加速。'
                     : runtimeInfo && !runtimeInfo.hasWebGpuAdapter

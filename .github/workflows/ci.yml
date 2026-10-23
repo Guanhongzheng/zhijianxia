@@ -67,6 +67,9 @@ jobs:
       - name: 主题意图搜索（21 项，纯函数）
         run: npm run theme:search
 
+      - name: GPU 权重预算（12 项，纯函数）
+        run: npm run ai:budget
+
       - name: 插件与内核（35 项）
         run: npm run plugins:verify
 

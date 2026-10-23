@@ -644,18 +644,36 @@ async function req(path, { method = 'GET', body, token } = {}) {
   // 同仓库、同精度、同后端，只差体积 → 是 GPU 单缓冲上限，不是精度不兼容。
   // ORT 的 WebGPU EP 把整个权重塞进单个 buffer，且 EP 没有分块开关，
   // 因此只能按体积提前改走 WASM。
+  //
+  // ⚠️ 判据已从「硬编码 1 GiB」升级为「按 GPUAdapter.limits 实测预算」
+  //    （device-profile.ts）。所以这里断言的是**行为约定**：
+  //    预算必须由适配器限额算出、必须参与加载前拦截、且保留兜底常量。
+  //    不要再匹配 `modelQ4Bytes > WEBGPU_MAX_Q4_BYTES` 这种实现细节字面量。
   const modelsSrc = readFileSync(
     new URL('../src/lib/ai/local-models.ts', import.meta.url),
+    'utf8',
+  );
+  const profileSrc = readFileSync(
+    new URL('../src/lib/ai/device-profile.ts', import.meta.url),
     'utf8',
   );
   check(
     /WEBGPU_MAX_Q4_BYTES/.test(modelsSrc) &&
       /canUseWebGpu/.test(modelsSrc) &&
       /q4Bytes/.test(modelsSrc) &&
-      /modelQ4Bytes\s*>\s*WEBGPU_MAX_Q4_BYTES/.test(rtSrc2) &&
+      /fitsGpuBudget\(\s*modelQ4Bytes\s*,\s*gpuBudget\s*\)/.test(rtSrc2) &&
+      /computeGpuWeightBudget\(probe\.limits\)/.test(rtSrc2) &&
       /sizeBlocked/.test(rtSrc2),
-    'WebGPU 按权重体积拦截：超过 GPU 单缓冲上限的模型提前改走 WASM（不再等下载完才失败）',
-    '体积阈值判定已接入 resolveRuntime'
+    'WebGPU 按权重体积拦截：超过 GPU 预算的模型提前改走 WASM（不再等下载完才失败）',
+    '体积预算判定已接入 resolveRuntime'
+  );
+  check(
+    /maxBufferSize/.test(profileSrc) &&
+      /maxStorageBufferBindingSize/.test(profileSrc) &&
+      /GPU_HEADROOM_RATIO\s*=\s*0\.5/.test(profileSrc) &&
+      /FALLBACK_GPU_BUDGET_BYTES/.test(profileSrc),
+    'GPU 预算按适配器限额计算（两个上限取小 × 50%），并保留读不到时的兜底',
+    'device-profile 就位'
   );
 
   // ---------- 下载 / 加载分离 ----------
