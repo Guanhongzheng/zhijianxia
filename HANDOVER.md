@@ -55,7 +55,7 @@ zhijianxia/
 │   │   ├── ai/                   17 个模块：local-engine / ai-worker / chain /
 │   │   │                         model-download / ort-setup / scheduler / sdk/
 │   │   ├── backend/              后端 API 客户端（auth / registry / theme-plaza…）
-│   │   ├── theme/                protocol.ts / packager.ts / types.ts
+│   │   ├── theme/                protocol.ts / packager.ts / types.ts / search.ts
 │   │   └── storage/  registry-cache.ts  utils.ts
 │   ├── store/                    app / auth / plugin / theme 四个 store
 │   └── plugins/
@@ -94,7 +94,38 @@ zhijianxia/
 | `68de835` `5b0863f` | 仪表盘三列重排 + 功能广场 |
 | `209c756` | 主题包改文件夹制 + 纯白主题 Pure Light |
 
-### 最近一次改动：主题广场并入主应用
+### 最近一次改动：主题广场「意图搜索」
+
+**背景**：原 theme-plaza 的语义搜索（`frontend/lib/semantic.ts`，Transformers.js 句向量）
+随那个工程一起删了，广场只剩子串匹配 —— 搜「暗色的简约主题」一条都出不来。
+
+**结论：不搬回向量检索，改做词表级语义。** 理由（这段是决策记录，别推翻重来）：
+- 中文句向量模型最小 ~25 MB，广场当前只有 5 个主题 —— 为 5 条记录下 25 MB，
+  与「本地离线优先」的定位冲突；
+- 模型要走 ORT 建 session，本仓库在 ORT 上踩的坑已经很多，搜索不该成为新错误源；
+- 主题元数据本身是结构化的（tags / category / description 都是作者刻意写的），
+  「概念词典 + 字段加权」就能拿到可解释的结果，且瞬时、零下载、可单测。
+
+**新增**：
+- `src/lib/theme/search.ts` —— `parseQuery` / `scoreTheme` / `searchThemes`。
+  12 个概念族（暗色 / 亮色 / 毛玻璃 / 简约 / 描边 / 高饱和 / 暖色 / 冷色 / 东方水墨 /
+  沉浸 / 高对比 / 护眼），同义词归一到概念；字段权重 name 3 > tags 2.5 > category 2 >
+  slug·desc 1.2 > author 0.3；单概念贡献封顶 3.5，避免「一个词堆料多的主题」压过
+  「两个词都命中的主题」。
+- `scripts/theme-search-test.mjs` —— 21 项，语料直接读 `server/packages/themes`（非手写 fixture）。
+  重点断言「查询词在全部元数据里根本不出现却仍能命中」，这才证明走的是概念映射。
+- 面板接入：结果按相关度排序 + 搜索框下方显示**理解结果**（`理解为 暗色 简约`），
+  让词表法的「猜错」对用户可见，而不是黑箱排序。
+
+**已知边界**：词典外的主观表达（「像咖啡馆那种」）搜不到，退化为关键词子串匹配 —— 
+与改造前一致，不会更差。主题量上到 200+ 再考虑接向量重排（接口不用动）。
+
+**顺手记一笔**：`theme.json` 里的 `scheme`（dark/light）**没有**进 `/api/themes` 列表响应，
+所以前端拿不到「亮/暗」这一结构化维度，只能靠 tags 判断。要精确按明暗筛选，得先补这个字段。
+
+---
+
+### 上一次改动：主题广场并入主应用
 
 **背景**：原先有一套独立的 theme-plaza 后端（已删除，含 git 历史）。用户澄清那是提示词给错时误建的，本意就在 zhijianxia 里做 → 能力整体并入主后端 8787。
 
@@ -117,10 +148,10 @@ zhijianxia/
 
 | # | 事项 | 优先级 | 说明 |
 | --- | --- | --- | --- |
-| 1 | **语义搜索已随 theme-plaza 删除** | 低 | 原 `frontend/lib/semantic.ts` 基于 Transformers.js，能用「暗色的简约主题」这类自然语言找主题。未移植进主应用，需重写 |
-| 2 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
-| 3 | **无 CI** | 低 | 测试全靠手动跑。`npm run contract && npm run e2e` 可作为最小门禁 |
-| 4 | **本机 AI 配置自相矛盾** | 中 | 当前 `capabilities.chat.provider=deepseek`，但 `base=https://api.openai.com/v1`、`model=gpt-4o-mini`（后端 chat 的 base/model 读历史键，provider 读 `ai_cap_chat`，两个写入方各改一半就会这样）。**症状**：`hasKey=true` 却对话 401/502，且 OpenAI 域名国内不可达。修法：在「设置 · AI」重选服务商后重填地址，或直接 PUT `{capability:'chat', provider:'deepseek', base:'https://api.deepseek.com/v1', model:'deepseek-chat'}` |
+| 1 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
+| 2 | **无 CI** | 低 | 测试全靠手动跑。`npm run typecheck && npm run contract && npm run theme:search` 可作为最小门禁 |
+| 3 | **本机 AI 配置自相矛盾** | 中 | 当前 `capabilities.chat.provider=deepseek`，但 `base=https://api.openai.com/v1`、`model=gpt-4o-mini`（后端 chat 的 base/model 读历史键，provider 读 `ai_cap_chat`，两个写入方各改一半就会这样）。**症状**：`hasKey=true` 却对话 401/502，且 OpenAI 域名国内不可达。修法：在「设置 · AI」重选服务商后重填地址，或直接 PUT `{capability:'chat', provider:'deepseek', base:'https://api.deepseek.com/v1', model:'deepseek-chat'}` |
+| 4 | **列表通道缺 `scheme` 字段** | 低 | `theme.json` 有 `scheme`（dark/light），但 `/api/themes` 列表响应没带 → 前端无法按明暗精确筛选，只能靠 tags。补一个字段即可（scanner + 类型 + 测试） |
 
 > **本轮已修复（原待办 1、4）**
 >
@@ -155,6 +186,7 @@ npm run server                 # → http://127.0.0.1:8787
 ```bash
 npm run typecheck              # tsc，约 20s
 npm run contract               # 契约测试，约 10s，当前 68/68
+npm run theme:search           # 意图搜索 21 项，约 1s（纯函数，不依赖前后端）
 npm run theme:security         # 路径穿越 17 项，约 5s
 npm run theme:ws               # WS 推送 3 项，约 15s
 npm run plugins:verify         # 插件 35 项，约 10s
@@ -330,7 +362,7 @@ server/packages/themes/<slug>/
 
 如果接手后要继续推进，建议：
 
-1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:security` / `plugins:verify` 应分别是 0 错 / 68/68 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
+1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:search` / `theme:security` / `plugins:verify` 应分别是 0 错 / 68/68 / 21/21 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
 2. **按需推进**：想扩功能就从 §4 表里挑；想优化就先读 §6 相关坑，避免重复踩。
 3. **改完照 §5 从短到长复跑**，注意坑 J（`theme:ws` 会连带停后端）。
 

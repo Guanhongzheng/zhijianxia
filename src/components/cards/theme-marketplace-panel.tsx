@@ -47,6 +47,7 @@ import {
   type PlazaTheme,
 } from '@/lib/backend/theme-plaza';
 import { cacheTheme, removeCachedTheme } from '@/lib/registry-cache';
+import { parseQuery, searchThemes } from '@/lib/theme/search';
 import { cn } from '@/lib/utils';
 
 /** 分类 id -> 图标 */
@@ -128,21 +129,29 @@ export function ThemeMarketplacePanel() {
     [],
   );
 
-  /** 按分类与关键词过滤仓库主题 */
+  /**
+   * 主题列表：先按分类筛，再按「意图搜索」排序。
+   *
+   * 关键词为空时 `searchThemes` 原样返回（不过滤、不排序），
+   * 所以这里可以无条件用它，不必再写一条「没有关键词就走原逻辑」的分支。
+   */
   const filtered = useMemo(() => {
-    const kw = keyword.trim().toLowerCase();
-    return plazaThemes.filter((t) => {
+    const pool = plazaThemes.filter((t) => {
       // 默认/内置主题不在广场中出现
       if (builtinIds.has(t.slug)) return false;
       if (category !== 'all' && t.category !== category) return false;
-      if (!kw) return true;
-      return (
-        t.name.toLowerCase().includes(kw) ||
-        t.description.toLowerCase().includes(kw) ||
-        t.tags.some((tag) => tag.toLowerCase().includes(kw))
-      );
+      return true;
     });
+    return searchThemes(pool, keyword).map((m) => m.item);
   }, [plazaThemes, category, keyword, builtinIds]);
+
+  /**
+   * 搜索被「理解」成了哪些概念。
+   *
+   * 词表级语义必然有猜错的时候，把理解结果显示出来，
+   * 用户一眼就能判断「是我没说清，还是它没听懂」，比黑箱排序友好。
+   */
+  const understood = useMemo(() => parseQuery(keyword).concepts, [keyword]);
 
   /** 仓库中被隐藏的默认/内置主题数量 */
   const hiddenBuiltinCount = useMemo(
@@ -240,7 +249,7 @@ export function ThemeMarketplacePanel() {
           <Input
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="搜索主题名称、简介或标签…"
+            placeholder="搜索主题，也可以描述你要的感觉（如「暗色的简约主题」）…"
             className="pl-9"
           />
         </div>
@@ -260,6 +269,20 @@ export function ThemeMarketplacePanel() {
           导入主题包
         </Button>
       </div>
+
+      {/* 搜索的「理解结果」：把命中的概念摊开给用户看，排序才不是黑箱 */}
+      {understood.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-1 text-[0.6875rem] text-[var(--zj-muted-fg)]">
+          <Sparkles className="size-3" />
+          <span>理解为</span>
+          {understood.map((c) => (
+            <Badge key={c.id} variant="outline" className="text-[0.6875rem]">
+              {c.label}
+            </Badge>
+          ))}
+          <span>· 按相关度排序</span>
+        </div>
+      )}
 
       {/* 主题分类筛选 */}
       <div className="zj-hide-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
@@ -296,9 +319,11 @@ export function ThemeMarketplacePanel() {
           <Palette className="size-5 text-[var(--zj-muted-fg)]" />
           <p className="text-sm text-[var(--zj-muted-fg)]">
             {backendOnline
-              ? hiddenBuiltinCount > 0
-                ? '默认主题已内置，无需下载；暂无可安装的主题包'
-                : '没有找到匹配的主题包'
+              ? keyword.trim()
+                ? '没有找到匹配的主题包，试试换个说法（如「暗色的简约主题」）'
+                : hiddenBuiltinCount > 0
+                  ? '默认主题已内置，无需下载；暂无可安装的主题包'
+                  : '没有找到匹配的主题包'
               : '后端服务未开启，无法浏览主题包'}
           </p>
         </div>
