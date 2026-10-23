@@ -406,6 +406,18 @@ async function req(path, { method = 'GET', body, token } = {}) {
     new URL('../src/lib/ai/ai-worker.ts', import.meta.url),
     'utf8'
   );
+  /**
+   * 真正的推理实现。
+   *
+   * Worker 现在只做「管道」（消息 id、进度、错误归一），具体推理在 engine/ 下。
+   * 断言里凡是在意「推理行为」而不是「文件位置」的，都读这份合并源 ——
+   * 这样以后再加一个引擎、再挪一次文件，这些断言不会无谓地红。
+   */
+  const transformersEngSrc = readFileSync(
+    new URL('../src/lib/ai/engine/transformers.ts', import.meta.url),
+    'utf8'
+  );
+  const inferenceSrc = `${workerSrc}\n${transformersEngSrc}`;
   const clientSrc = readFileSync(
     new URL('../src/lib/ai/ai-client.ts', import.meta.url),
     'utf8'
@@ -419,10 +431,10 @@ async function req(path, { method = 'GET', body, token } = {}) {
     'utf8'
   );
   check(
-    // pipeline 的 device/dtype 现在由 Worker 传入
-    /device:\s*rt\.device === 'webgpu' \? 'webgpu' : 'wasm'/.test(workerSrc) &&
-      /dtype:\s*rt\.dtype/.test(workerSrc) &&
-      /runtimes/.test(workerSrc),
+    // pipeline 的 device/dtype 现在由 Worker 传入（实现在 engine/transformers.ts）
+    /device:\s*rt\.device === 'webgpu' \? 'webgpu' : 'wasm'/.test(inferenceSrc) &&
+      /dtype:\s*rt\.dtype/.test(inferenceSrc) &&
+      /runtimes/.test(inferenceSrc),
     'pipeline 显式传入 device 与 dtype（WebGPU 走 q4 / WASM 走模型精度档）',
     'device + dtype 已接线'
   );
@@ -477,9 +489,9 @@ async function req(path, { method = 'GET', body, token } = {}) {
   // ⚠️ 判定与清缓存重试现在都在 Worker 里（加载已搬到 Worker）。
   check(
     /isCacheRelatedError/.test(cacheErrSrc) &&
-      /isCacheRelatedError\(err\)/.test(workerSrc) &&
-      /deleteModelFiles\(modelId\)/.test(workerSrc) &&
-      /cacheRetried/.test(workerSrc),
+      /isCacheRelatedError\(err\)/.test(inferenceSrc) &&
+      /deleteModelFiles\(modelId\)/.test(inferenceSrc) &&
+      /cacheRetried/.test(inferenceSrc),
     '仅在错误与缓存相关时才清模型缓存（避免重复下载数百MB 权重）',
     '缓存清理已条件化'
   );
@@ -517,9 +529,9 @@ async function req(path, { method = 'GET', body, token } = {}) {
       /export async function unloadLocalModel\(\)\s*\{[\s\S]{0,400}?await pipelinePromise/.test(
         engineSrc,
       ) &&
-      // Worker 侧要真的释放 session
-      /async function releasePipeline/.test(workerSrc) &&
-      /dispose/.test(workerSrc),
+      // 引擎侧要真的释放 session
+      /async function releasePipeline/.test(transformersEngSrc) &&
+      /dispose/.test(transformersEngSrc),
     '卸载模型会释放 ORT session 并等待在途加载结束（避免并发建session 触发 Aborted()）',
     'unload 已await 在途加载并释放 session'
   );
@@ -565,8 +577,8 @@ async function req(path, { method = 'GET', body, token } = {}) {
     /generateInWorker/.test(engineSrc) &&
       /loadInWorker/.test(engineSrc) &&
       /new Worker\(new URL\('\.\/ai-worker\.ts', import\.meta\.url\)\)/.test(clientSrc) &&
-      // Worker 里的加载要互斥 —— ORT 的 wasm 不支持并发建 session
-      /loadingPromise/.test(workerSrc) &&
+      // 引擎里的加载要互斥 —— ORT 的 wasm 不支持并发建 session
+      /loadingPromise/.test(inferenceSrc) &&
       // 多线程：不再是写死的 numThreads = 1
       /numThreads\s*=\s*resolveWasmThreads\(\)/.test(ortSetupSrc) &&
       /crossOriginIsolated/.test(ortSetupSrc) &&
@@ -747,9 +759,9 @@ async function req(path, { method = 'GET', body, token } = {}) {
   );
   check(
     /CHUNK_SIZE\s*=\s*64\s*\*\s*1024\s*\*\s*1024/.test(cacheSrc) &&
-      // ⚠️ customCache 现在由 **Worker** 设置（加载与推理都已搬到 Worker）
-      /useCustomCache\s*=\s*true/.test(workerSrc) &&
-      /customCache\s*=\s*modelCache/.test(workerSrc) &&
+      // ⚠️ customCache 现在由**推理引擎**设置（加载与推理都已搬到 Worker）
+      /useCustomCache\s*=\s*true/.test(inferenceSrc) &&
+      /customCache\s*=\s*modelCache/.test(inferenceSrc) &&
       /modelCache\.put/.test(dlrSrc) &&
       /modelCache\.match/.test(dlrSrc) &&
       // key 用路径而非 fragment

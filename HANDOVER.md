@@ -52,9 +52,10 @@ zhijianxia/
 │   ├── app/                      Next.js 路由
 │   ├── components/cards/         11 个功能面板（见下表）
 │   ├── lib/
-│   │   ├── ai/                   18 个模块：local-engine / ai-worker / chain /
+│   │   ├── ai/                   19 个模块：local-engine / ai-worker / chain /
 │   │   │                         model-download / ort-setup / scheduler /
 │   │   │                         device-profile（GPU 预算）/ sdk/
+│   │   │   └── engine/           ★ 推理引擎边界：types / registry / transformers
 │   │   ├── backend/              后端 API 客户端（auth / registry / theme-plaza…）
 │   │   ├── theme/                protocol.ts / packager.ts / types.ts / search.ts
 │   │   └── storage/  registry-cache.ts  utils.ts

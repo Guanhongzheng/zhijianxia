@@ -65,14 +65,24 @@ TurboQuant 同样核实为真实工作（Google Research，ICLR 2026；KV cache 
 
 ## 3. 建议路线（重排后）
 
-### Phase 1 · 引擎边界（1–2 天，行为零变化）
+### Phase 1 · 引擎边界 —— ✅ 已完成
 
-抽出 `LocalEngine` 接口（`load / generate / unload / capabilities`），
-transformers.js 作为唯一实现，调用方（scheduler / ai-worker / 插件 SDK）只依赖接口。
+抽出 `InferenceEngine` 接口（`load / generate / unload` + 引擎元信息），
+Transformers.js 作为唯一实现，**Worker 退化成纯管道**（消息 id、进度、错误归一、卸载时序），
+推理实现搬到 `src/lib/ai/engine/transformers.ts`。
 
-- 价值：让 Phase 2 是「加一个实现」而不是「重写一遍」；
-- 验收：`typecheck` + 契约 68/68 + 现有 AI 对话行为不变；
-- 风险：低。**没有第二实现时，接口设计容易过度**——只抽 `load/generate/unload` 三个方法即可，不要提前设计流式回调矩阵。
+```
+src/lib/ai/engine/
+├── types.ts          InferenceEngine / 参数 / 进度回调
+├── transformers.ts   ONNX Runtime Web 实现（从 ai-worker 原样搬移）
+└── registry.ts       引擎单例注册表；未知 id 回落默认引擎
+```
+
+- 价值：Phase 2 变成「加一个 engine 文件 + register 一行」，不必再动那套容易出错的时序逻辑；
+- 验收：`typecheck` 干净、契约 69/69、**真机端到端**（下载 SmolLM2 417 MB → 加载 3 s
+  （缓存命中 + WebGPU）→ 对话出字）通过，控制台无错误；
+- 说明：接口刻意只有三个动作，没有提前设计可取消流 / 多模态 / 工具调用 ——
+  第二个引擎真出现时再按需长，否则是抽象税。
 
 ### Phase 2 · 接入第二个引擎（3–5 天，需要决策）
 
