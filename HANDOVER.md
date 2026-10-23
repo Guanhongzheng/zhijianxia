@@ -151,10 +151,9 @@ zhijianxia/
 | # | 事项 | 优先级 | 说明 |
 | --- | --- | --- | --- |
 | 1 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
-| 2 | **本机 AI 配置自相矛盾** | 中 | 当前 `capabilities.chat.provider=deepseek`，但 `base=https://api.openai.com/v1`、`model=gpt-4o-mini`（后端 chat 的 base/model 读历史键，provider 读 `ai_cap_chat`，两个写入方各改一半就会这样）。**症状**：`hasKey=true` 却对话 401/502，且 OpenAI 域名国内不可达。修法：在「设置 · AI」重选服务商后重填地址，或直接 PUT `{capability:'chat', provider:'deepseek', base:'https://api.deepseek.com/v1', model:'deepseek-chat'}` |
-| 3 | **AI 引擎升级（7B 目标）** | 中 | 详情见 `docs/AI-RUNTIME-ROADMAP.md`。结论：静态内存规划 / OPFS 流式 / KV 压缩 / 核融合 / GGUF 量化档**全部依赖换引擎**，当前 ORT Web 不提供这些钩子。Phase 1（引擎边界）已完成；Phase 2 接 WebLLM。**待用户拍板三件事**：7B 预期是否下调、是否接受第二套模型格式、是否接受 ≈2 MB 依赖 |
+| 2 | **AI 引擎升级（7B 目标）** | 中 | 详情见 `docs/AI-RUNTIME-ROADMAP.md`。结论：静态内存规划 / OPFS 流式 / KV 压缩 / 核融合 / GGUF 量化档**全部依赖换引擎**，当前 ORT Web 不提供这些钩子。Phase 1（引擎边界）已完成；Phase 2 接 WebLLM。**待用户拍板三件事**：7B 预期是否下调、是否接受第二套模型格式、是否接受 ≈2 MB 依赖 |
 
-> **本轮已修复（原待办 1、4）**
+> **本轮已修复的既有问题**
 >
 > 1. 契约测试「AI 配置不返回明文 Key（仅 hasKey）」恒红 —— 根因是断言写法而非接口缺陷：
 >    旧断言 `hasKey === false` 等价于「本机从未配置 Key」，属环境耦合，配过 Key 就永远红。
@@ -172,6 +171,11 @@ zhijianxia/
 > 意图搜索现在把 scheme 当**结构化信号**（+2.2 分，与文本无关），
 > 于是「暗色」不再要求作者把这两个字写进 tags —— 实测墨黛是纸底亮色（light），
 > 深空琉璃是真正的 dark，两者在「暗色」查询里已能正确分层。
+>
+> **本机 AI 配置已修正**（原待办 2）：provider / base / model 三者现在一致
+> （deepseek + `api.deepseek.com/v1` + `deepseek-chat`），Key 存在数据库里、加密存储，
+> **不在仓库里**。实测 `/api/ai/chat` 与 `/api/ai/stream` 均返回 200 且正常出字；
+> 顺便验证了「契约测试不留副作用」——跑完整套契约后配置逐字段未变。
 
 ---
 
