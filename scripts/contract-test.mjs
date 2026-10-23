@@ -1109,6 +1109,120 @@ async function req(path, { method = 'GET', body, token } = {}) {
     'CORP 头缺失',
   );
 
+  // ---------- 接口文档（OpenAPI） ----------
+  //
+  // 文档是「从源码生成」的，所以真正要测的不是「文档存在」，
+  // 而是**它没有和代码漂移**：源码里每条路由都必须在文档里，
+  // 且仓库里提交的那份与重新生成的结果逐字节一致。
+  const openapiRes = await req('/api/openapi.json');
+  check(
+    openapiRes.status === 200 && openapiRes.data?.openapi?.startsWith('3.'),
+    'GET /api/openapi.json 返回 OpenAPI 3.x 描述',
+    `status=${openapiRes.status}`,
+  );
+
+  const opCount = Object.values(openapiRes.data?.paths ?? {}).reduce(
+    (n, item) => n + Object.keys(item).length,
+    0,
+  );
+  check(opCount >= 40, '接口文档覆盖足够多的操作', `${opCount} 个`);
+
+  // 全量操作都要有可读摘要 —— 自动生成的「GET /api/x」式占位等于没写
+  const missingSummary = [];
+  for (const [p, item] of Object.entries(openapiRes.data?.paths ?? {})) {
+    for (const [m, op] of Object.entries(item)) {
+      if (!op.summary || op.summary === `${m.toUpperCase()} ${p}`) missingSummary.push(`${m} ${p}`);
+    }
+  }
+  check(
+    missingSummary.length === 0,
+    '每个操作都有可读摘要（不是 HTTP 方法 + 路径的占位）',
+    missingSummary.slice(0, 3).join(', '),
+  );
+
+  // 源码 → 文档 的覆盖检查
+  const { collectRoutes, buildDocument } = await import('./gen-openapi.mjs');
+  const sourceRoutes = collectRoutes();
+  const documented = new Set(
+    Object.entries(openapiRes.data?.paths ?? {}).flatMap(([p, item]) =>
+      Object.keys(item).map((m) => `${m} ${p}`),
+    ),
+  );
+  const undocumented = sourceRoutes
+    .map((r) => `${r.method} ${r.path.replace(/:([A-Za-z0-9_]+)/g, '{$1}')}`)
+    .filter((key) => !documented.has(key));
+  check(
+    undocumented.length === 0,
+    '源码里的每条路由都出现在接口文档中（新增接口忘了生成会被拦下）',
+    undocumented.slice(0, 3).join(', '),
+  );
+
+  // 新鲜度：重新生成一次，与提交的文件比对
+  const regenerated = JSON.stringify(buildDocument(collectRoutes()), null, 2) + '\n';
+  const committed = readFileSync(new URL('../docs/openapi.json', import.meta.url), 'utf8');
+  check(
+    regenerated === committed,
+    'docs/openapi.json 与源码一致（改了路由要跑 npm run api:docs）',
+    regenerated === committed ? '' : '文件已过期',
+  );
+
+  const docsPage = await fetch(`${BASE}/api/docs`);
+  const docsHtml = await docsPage.text();
+  check(
+    docsPage.status === 200 &&
+      /text\/html/.test(docsPage.headers.get('content-type') ?? '') &&
+      docsHtml.includes('/api/openapi.json'),
+    'GET /api/docs 返回可读的 HTML 查看页（离线内联样式，不依赖 CDN）',
+    `status=${docsPage.status}, ${docsHtml.length} 字节`,
+  );
+
+  // ---------- 遥测上报 ----------
+  //
+  // 这个端点**免鉴权**（崩在登录前的错误最需要被看到），所以校验必须更严：
+  // 形状不对就 400、超量就 400，而不是「存下来再说」。
+  const badTelemetry = await req('/api/telemetry', {
+    method: 'POST',
+    body: { events: [] },
+  });
+  check(badTelemetry.status === 400, '上报空事件数组被拒', `status=${badTelemetry.status}`);
+
+  const oversized = await req('/api/telemetry', {
+    method: 'POST',
+    body: { events: Array.from({ length: 51 }, () => ({ level: 'error', message: 'x' })) },
+  });
+  check(oversized.status === 400, '单次超过 50 条被拒', `status=${oversized.status}`);
+
+  const posted = await req('/api/telemetry', {
+    method: 'POST',
+    body: {
+      events: [
+        { level: 'error', name: 'contract-test', message: '接口契约测试写入的事件', path: '/card/42?x=1' },
+        { level: 'metric', name: 'contract_lcp', value: 1234 },
+        { level: 'bogus', name: 'contract-test', message: '' }, // 会被拒：缺 message
+      ],
+    },
+  });
+  check(
+    posted.status === 200 && posted.data?.accepted === 2 && posted.data?.rejected === 1,
+    '合法事件入库、非法事件单独计数（不因一条坏数据丢整批）',
+    JSON.stringify(posted.data),
+  );
+
+  const noAuthSummary = await req('/api/telemetry/summary');
+  check(noAuthSummary.status === 401, '未登录不能读汇总', `status=${noAuthSummary.status}`);
+
+  const summary = await req('/api/telemetry/summary?hours=24', { token: adminToken });
+  check(
+    summary.status === 200 && (summary.data?.byLevel?.error ?? 0) >= 1,
+    '管理员可读遥测汇总',
+    `error=${summary.data?.byLevel?.error}`,
+  );
+  check(
+    summary.data?.metrics?.contract_lcp?.p95 === 1234,
+    '指标分位数可读且正确',
+    JSON.stringify(summary.data?.metrics?.contract_lcp),
+  );
+
   // 清理
   await req(`/api/groups/${groupId}`, { method: 'DELETE', token: tokenA });
   await req(`/api/notices/${noticeId}`, { method: 'DELETE', token: adminToken });

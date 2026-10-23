@@ -1,0 +1,1529 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "智简匣 · 本地离线 AI 优先的局域网工具箱 · 后端接口",
+    "version": "1.1.0",
+    "description": "本文件由 `npm run api:docs` 从路由源码自动生成，**请勿手工编辑**。\n需要补充说明时改 `docs/openapi.meta.json`，再重新生成。\n\n鉴权方式：先 `POST /api/auth/login` 拿到 token，再在请求头带 `Authorization: Bearer <token>`。"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8787",
+      "description": "本地后端（默认端口）"
+    },
+    {
+      "url": "http://localhost:8787",
+      "description": "本地后端（localhost）"
+    }
+  ],
+  "tags": [
+    {
+      "name": "AI"
+    },
+    {
+      "name": "账号"
+    },
+    {
+      "name": "主题"
+    },
+    {
+      "name": "好友"
+    },
+    {
+      "name": "群组"
+    },
+    {
+      "name": "系统"
+    },
+    {
+      "name": "消息"
+    },
+    {
+      "name": "公告"
+    },
+    {
+      "name": "包仓库"
+    }
+  ],
+  "paths": {
+    "/api/ai/chat": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "对话",
+        "operationId": "post_api_ai_chat",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/ai-proxy.js:728"
+      }
+    },
+    "/api/ai/config": {
+      "get": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "读取 AI 配置",
+        "operationId": "get_api_ai_config",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/ai-proxy.js:561"
+      },
+      "put": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "更新 AI 配置",
+        "operationId": "put_api_ai_config",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/ai-proxy.js:585"
+      }
+    },
+    "/api/ai/image": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "生成图像",
+        "operationId": "post_api_ai_image",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/ai-proxy.js:818"
+      }
+    },
+    "/api/ai/speech": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "语音合成",
+        "operationId": "post_api_ai_speech",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/ai-proxy.js:950"
+      }
+    },
+    "/api/ai/stream": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "summary": "流式对话（SSE）",
+        "operationId": "post_api_ai_stream",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/ai-stream.js:203"
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "账号"
+        ],
+        "summary": "登录",
+        "operationId": "post_api_auth_login",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/auth.js:98"
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "账号"
+        ],
+        "summary": "登出",
+        "operationId": "post_api_auth_logout",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/auth.js:134"
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "账号"
+        ],
+        "summary": "读取当前登录用户",
+        "operationId": "get_api_auth_me",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/auth.js:125"
+      },
+      "patch": {
+        "tags": [
+          "账号"
+        ],
+        "summary": "更新当前登录用户",
+        "operationId": "patch_api_auth_me",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/auth.js:143"
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "账号"
+        ],
+        "summary": "注册",
+        "operationId": "post_api_auth_register",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/auth.js:37"
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "主题列表",
+        "operationId": "get_api_docs",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/docs.js:65"
+      }
+    },
+    "/api/friends": {
+      "get": {
+        "tags": [
+          "好友"
+        ],
+        "summary": "好友列表",
+        "operationId": "get_api_friends",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/friends.js:34"
+      }
+    },
+    "/api/friends/{id}/accept": {
+      "put": {
+        "tags": [
+          "好友"
+        ],
+        "summary": "接受好友申请",
+        "operationId": "put_api_friends_id_accept",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/friends.js:161"
+      }
+    },
+    "/api/friends/{id}/reject": {
+      "put": {
+        "tags": [
+          "好友"
+        ],
+        "summary": "拒绝好友申请",
+        "operationId": "put_api_friends_id_reject",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/friends.js:198"
+      }
+    },
+    "/api/friends/{uid}": {
+      "delete": {
+        "tags": [
+          "好友"
+        ],
+        "summary": "删除好友",
+        "operationId": "delete_api_friends_uid_",
+        "parameters": [
+          {
+            "name": "uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/friends.js:220"
+      }
+    },
+    "/api/friends/request": {
+      "post": {
+        "tags": [
+          "好友"
+        ],
+        "summary": "发送好友申请",
+        "operationId": "post_api_friends_request",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/friends.js:97"
+      }
+    },
+    "/api/groups": {
+      "get": {
+        "tags": [
+          "群组"
+        ],
+        "summary": "群组列表",
+        "operationId": "get_api_groups",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/groups.js:45"
+      },
+      "post": {
+        "tags": [
+          "群组"
+        ],
+        "summary": "创建群组",
+        "operationId": "post_api_groups",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/groups.js:60"
+      }
+    },
+    "/api/groups/{groupId}": {
+      "delete": {
+        "tags": [
+          "群组"
+        ],
+        "summary": "删除群组",
+        "operationId": "delete_api_groups_groupId_",
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/groups.js:128"
+      },
+      "get": {
+        "tags": [
+          "群组"
+        ],
+        "summary": "群组详情",
+        "operationId": "get_api_groups_groupId_",
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/groups.js:78"
+      },
+      "put": {
+        "tags": [
+          "群组"
+        ],
+        "summary": "更新群组",
+        "operationId": "put_api_groups_groupId_",
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/groups.js:108"
+      }
+    },
+    "/api/groups/{groupId}/members": {
+      "post": {
+        "tags": [
+          "群组"
+        ],
+        "summary": "添加群成员",
+        "operationId": "post_api_groups_groupId_members",
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/groups.js:152"
+      }
+    },
+    "/api/groups/{groupId}/members/{uid}": {
+      "delete": {
+        "tags": [
+          "群组"
+        ],
+        "summary": "移除群成员",
+        "operationId": "delete_api_groups_groupId_members_uid_",
+        "parameters": [
+          {
+            "name": "groupId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/groups.js:181"
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "系统"
+        ],
+        "summary": "健康检查",
+        "operationId": "get_api_health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/index.js:50"
+      }
+    },
+    "/api/messages": {
+      "get": {
+        "tags": [
+          "消息"
+        ],
+        "summary": "消息列表",
+        "operationId": "get_api_messages",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/messages.js:35"
+      }
+    },
+    "/api/notices": {
+      "get": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "公告列表",
+        "operationId": "get_api_notices",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/notices.js:34"
+      },
+      "post": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "创建公告",
+        "operationId": "post_api_notices",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/notices.js:54"
+      }
+    },
+    "/api/notices/{id}": {
+      "delete": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "删除公告",
+        "operationId": "delete_api_notices_id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/notices.js:101"
+      },
+      "get": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "公告详情",
+        "operationId": "get_api_notices_id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/notices.js:42"
+      },
+      "put": {
+        "tags": [
+          "公告"
+        ],
+        "summary": "更新公告",
+        "operationId": "put_api_notices_id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/notices.js:79"
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "主题列表",
+        "operationId": "get_api_openapi_json",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/docs.js:38"
+      }
+    },
+    "/api/registry/plugins": {
+      "get": {
+        "tags": [
+          "包仓库"
+        ],
+        "summary": "读取插件包",
+        "operationId": "get_api_registry_plugins",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/registry.js:37"
+      },
+      "post": {
+        "tags": [
+          "包仓库"
+        ],
+        "summary": "上传插件包",
+        "operationId": "post_api_registry_plugins",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/registry.js:57"
+      }
+    },
+    "/api/registry/plugins/{id}": {
+      "delete": {
+        "tags": [
+          "包仓库"
+        ],
+        "summary": "删除插件包",
+        "operationId": "delete_api_registry_plugins_id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/registry.js:74"
+      },
+      "get": {
+        "tags": [
+          "包仓库"
+        ],
+        "summary": "读取插件包",
+        "operationId": "get_api_registry_plugins_id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/registry.js:44"
+      }
+    },
+    "/api/registry/themes": {
+      "get": {
+        "tags": [
+          "包仓库"
+        ],
+        "summary": "主题列表",
+        "operationId": "get_api_registry_themes",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/registry.js:90"
+      },
+      "post": {
+        "tags": [
+          "包仓库"
+        ],
+        "summary": "创建主题",
+        "operationId": "post_api_registry_themes",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/registry.js:129"
+      }
+    },
+    "/api/registry/themes/{id}": {
+      "delete": {
+        "tags": [
+          "包仓库"
+        ],
+        "summary": "删除主题",
+        "operationId": "delete_api_registry_themes_id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/registry.js:146"
+      },
+      "get": {
+        "tags": [
+          "包仓库"
+        ],
+        "summary": "主题详情",
+        "operationId": "get_api_registry_themes_id_",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          }
+        },
+        "x-zj-source": "server/src/routes/registry.js:101"
+      }
+    },
+    "/api/telemetry": {
+      "delete": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "删除主题",
+        "operationId": "delete_api_telemetry",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/telemetry.js:137"
+      },
+      "post": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "创建主题",
+        "operationId": "post_api_telemetry",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/telemetry.js:63"
+      }
+    },
+    "/api/telemetry/summary": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "主题列表",
+        "operationId": "get_api_telemetry_summary",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/telemetry.js:119"
+      }
+    },
+    "/api/themes": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "主题列表",
+        "operationId": "get_api_themes",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/themes.js:182"
+      }
+    },
+    "/api/themes/{slug}": {
+      "delete": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "删除主题",
+        "operationId": "delete_api_themes_slug_",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          },
+          "401": {
+            "description": "未登录或登录已过期"
+          },
+          "403": {
+            "description": "需要管理员权限"
+          }
+        },
+        "x-zj-source": "server/src/routes/themes.js:492"
+      },
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "主题详情",
+        "operationId": "get_api_themes_slug_",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/themes.js:229"
+      }
+    },
+    "/api/themes/{slug}/cover": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "读取主题封面",
+        "operationId": "get_api_themes_slug_cover",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/themes.js:256"
+      }
+    },
+    "/api/themes/{slug}/download": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "下载主题包",
+        "operationId": "get_api_themes_slug_download",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/themes.js:433"
+      }
+    },
+    "/api/themes/{slug}/previews/{file}": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "读取主题预览图",
+        "operationId": "get_api_themes_slug_previews_file_",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/themes.js:309"
+      }
+    },
+    "/api/themes/{slug}/theme-file": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "导出主题文件",
+        "operationId": "get_api_themes_slug_theme_file",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/themes.js:395"
+      }
+    },
+    "/api/themes/{slug}/wallpaper/{file}": {
+      "get": {
+        "tags": [
+          "主题"
+        ],
+        "summary": "读取主题壁纸",
+        "operationId": "get_api_themes_slug_wallpaper_file_",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "description": "参数不合法"
+          }
+        },
+        "x-zj-source": "server/src/routes/themes.js:349"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque",
+        "description": "登录接口返回的 token"
+      }
+    }
+  }
+}

@@ -29,6 +29,8 @@ const aiRoutes = require('./routes/ai-proxy');
 const aiStreamRoutes = require('./routes/ai-stream');
 const registryRoutes = require('./routes/registry');
 const themeRoutes = require('./routes/themes');
+const docsRoutes = require('./routes/docs');
+const telemetryRoutes = require('./routes/telemetry');
 const { startWatcher, initialSync } = require('./theme-store/watcher');
 
 const PORT = Number(process.env.PORT) || 8787;
@@ -63,6 +65,10 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/ai', aiStreamRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/registry', registryRoutes);
+// 接口文档（/api/openapi.json 与 /api/docs），内容由 npm run api:docs 生成
+app.use('/', docsRoutes);
+// 前端错误与性能事件上报（POST 免鉴权，查看与清空需管理员）
+app.use('/api', telemetryRoutes);
 // 主题广场（浏览通道）：读主题目录、拿封面与预览图、下载与导出
 // 与 /api/registry/themes（管理通道）同源，都是 server/packages/themes/ 目录
 app.use('/', themeRoutes);
