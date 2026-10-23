@@ -220,32 +220,90 @@ async function req(path, { method = 'GET', body, token } = {}) {
     'GET /api/ai/config 返回字段名为 base（非 apiUrl）',
     Object.keys(aiCfg.data || {}).join(','),
   );
+  // 断言「不返回明文 Key」只能看**结构**，不能断言 hasKey 的值。
+  //
+  // 旧写法是 `aiCfg.data?.hasKey === false`，它实际断言的是「本机从未配过 Key」——
+  // 这是环境状态而非接口契约：开发机配过 Key（哪怕只是调试用的）就 hasKey=true，
+  // 于是这条永远红。但它红的时候接口并没有泄漏任何东西 —— 属于「测试错、代码对」，
+  // 与项目里反复踩到的同类问题一致（见 HANDOVER.md §6 通用原则 A）。
+  //
+  // 真正的契约有两条：
+  //   1) hasKey 必须是布尔（前端靠它决定「已配置 / 未配置」文案，undefined 会让判断失真）
+  //   2) 响应里不能出现 Key 字段，也不能出现**长得像 Key 的值**
+  //      （后者用于兜住「换了字段名但把值透传出来」的情况）
+  // 注意 `keyHint`（如 "sk-..."）是占位提示，不是密钥，故按精确字段名匹配。
+  const SECRET_FIELD = /^(key|apikey|api_key|secret|token|authorization)$/i;
+  const SECRET_VALUE = /(sk-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,})/;
+  const findSecrets = (node, path = '$') => {
+    if (!node || typeof node !== 'object') return [];
+    if (Array.isArray(node)) {
+      return node.flatMap((v, i) => findSecrets(v, `${path}[${i}]`));
+    }
+    return Object.entries(node).flatMap(([k, v]) => [
+      ...(SECRET_FIELD.test(k) && v ? [`${path}.${k}`] : []),
+      ...(typeof v === 'string' && SECRET_VALUE.test(v) ? [`${path}.${k}（疑似密钥值）`] : []),
+      ...findSecrets(v, `${path}.${k}`),
+    ]);
+  };
+  const leakedSecrets = findSecrets(aiCfg.data);
   check(
-    aiCfg.data?.hasKey === false,
+    typeof aiCfg.data?.hasKey === 'boolean' && leakedSecrets.length === 0,
     'AI 配置不返回明文 Key（仅 hasKey）',
+    leakedSecrets.length
+      ? `泄漏字段：${leakedSecrets.join(', ')}`
+      : `hasKey=${aiCfg.data?.hasKey}，响应内无 Key 字段、无类密钥值`,
   );
 
-  const aiSave = await req('/api/ai/config', {
-    method: 'PUT',
-    token: adminToken,
-    body: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', timeout: 30000, temperature: 0.7 },
-  });
-  check(
-    aiSave.data && 'base' in aiSave.data,
-    'PUT /api/ai/config 接受 base 字段并回显',
-    JSON.stringify(aiSave.data).slice(0, 80),
-  );
+  // ⚠️ 下面的 PUT 改的是**本机真实配置**（写进 server/data 的 SQLite），不是沙箱。
+  // 不还原的话，每跑一次契约测试就把用户选的服务商地址/模型冲成 OpenAI 默认值。
+  // 而且症状极具迷惑性：`hasKey` 仍是 true，可 base 与实际 Key 对不上 →
+  // AI 对话 401/502，排查时几乎不会想到「是跑过契约测试」。
+  //
+  // 后端对 chat 的 base/model 读的就是这组历史键（ai_api_base / ai_model），
+  // 而 provider 存在 ai_cap_chat 里 —— 两者被不同写入方各改一半，就会出现
+  // 「provider=deepseek、base=api.openai.com」这种自相矛盾的组合。
+  const cfgSnapshot = {
+    base: aiCfg.data?.base ?? '',
+    model: aiCfg.data?.model ?? '',
+    timeout: aiCfg.data?.timeout ?? 30000,
+    temperature: aiCfg.data?.temperature ?? 0.7,
+  };
 
-  const aiChat = await req('/api/ai/chat', {
-    method: 'POST',
-    token: adminToken,
-    body: { messages: [{ role: 'user', content: 'ping' }] },
-  });
-  check(
-    aiChat.status !== 401,
-    'POST /api/ai/chat 鉴权通过（无 Key 时应为 400/502 而非 401）',
-    `status=${aiChat.status}`,
-  );
+  try {
+    const aiSave = await req('/api/ai/config', {
+      method: 'PUT',
+      token: adminToken,
+      body: { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', timeout: 30000, temperature: 0.7 },
+    });
+    check(
+      aiSave.data && 'base' in aiSave.data,
+      'PUT /api/ai/config 接受 base 字段并回显',
+      JSON.stringify(aiSave.data).slice(0, 80),
+    );
+
+    const aiChat = await req('/api/ai/chat', {
+      method: 'POST',
+      token: adminToken,
+      body: { messages: [{ role: 'user', content: 'ping' }] },
+    });
+    check(
+      aiChat.status !== 401,
+      'POST /api/ai/chat 鉴权通过（无 Key 时应为 400/502 而非 401）',
+      `status=${aiChat.status}`,
+    );
+  } finally {
+    // 只回写 4 个非敏感字段；body 不带 apiKey → 后端不会碰已存的 Key
+    const restore = await req('/api/ai/config', {
+      method: 'PUT',
+      token: adminToken,
+      body: cfgSnapshot,
+    });
+    check(
+      restore.status === 200 && restore.data?.base === cfgSnapshot.base,
+      '跑完还原本机 AI 配置（契约测试不留副作用）',
+      `base=${cfgSnapshot.base || '(空 → 后端默认)'}`,
+    );
+  }
 
   // 群聊 WS 广播必须带真实自增 id —— 前端靠它去重，
   // 缺失会导致前端拿 createdAt 冒充 id，React key 冲突 + 消息重复

@@ -16,7 +16,7 @@
 | 前端 | Next.js（`localhost:3000`） |
 | 后端 | Express 4 + ws 8 + `node:sqlite`（`127.0.0.1:8787`） |
 | 规模 | 后端 22 个 JS · 前端 104 个 TS/TSX · 测试脚本 15 个 |
-| 工作区 | 干净，与 origin/main 同步 |
+| 工作区 | 交接时干净且与 origin/main 同步；当前以 `git status` 为准 |
 
 **产品定位一句话**：核心能力（离线 AI、插件、主题、备忘录）**全部在浏览器本地跑，不需要后端**；只有好友/群聊/公告/后端转发 API 才需要启动局域网后端。
 
@@ -83,7 +83,8 @@ zhijianxia/
 
 | 提交 | 内容 |
 | --- | --- |
-| `0d2d99a` | **主题广场并入主应用**（最近一次，详见下节） |
+| `7141e2f` | 补这份交接文档（最近一次） |
+| `0d2d99a` | **主题广场并入主应用**（详见下节） |
 | `e12bd4a` | 三套自制主题（墨黛/青柠/绯）+ 配色与导入校验工具 |
 | `0e97322` | 首屏 JS −120KB（LangChain 移出静态导入链） |
 | `9e2dcbc` | 修后端模式对话失败 + 打通插件 AI + 开放第三方插件创作 |
@@ -116,10 +117,22 @@ zhijianxia/
 
 | # | 事项 | 优先级 | 说明 |
 | --- | --- | --- | --- |
-| 1 | **契约测试有 1 项既有失败** | 中 | 「AI 配置不返回明文 Key（仅 hasKey）」，与主题改动无关，历史就红着。建议单开一次修掉 —— 长期挂着的失败会掩盖真实回归 |
-| 2 | **语义搜索已随 theme-plaza 删除** | 低 | 原 `frontend/lib/semantic.ts` 基于 Transformers.js，能用「暗色的简约主题」这类自然语言找主题。未移植进主应用，需重写 |
-| 3 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
-| 4 | **无 CI** | 低 | 测试全靠手动跑。`npm run contract && npm run e2e` 可作为最小门禁 |
+| 1 | **语义搜索已随 theme-plaza 删除** | 低 | 原 `frontend/lib/semantic.ts` 基于 Transformers.js，能用「暗色的简约主题」这类自然语言找主题。未移植进主应用，需重写 |
+| 2 | **Windows 上 chokidar 不可靠** | 低 | 删目录时 EPERM 且 `unlinkDir` 延迟送达。当前靠 15 秒周期对账兜底。主题量大时可考虑改 `fs.watch` 或只靠对账 |
+| 3 | **无 CI** | 低 | 测试全靠手动跑。`npm run contract && npm run e2e` 可作为最小门禁 |
+| 4 | **本机 AI 配置自相矛盾** | 中 | 当前 `capabilities.chat.provider=deepseek`，但 `base=https://api.openai.com/v1`、`model=gpt-4o-mini`（后端 chat 的 base/model 读历史键，provider 读 `ai_cap_chat`，两个写入方各改一半就会这样）。**症状**：`hasKey=true` 却对话 401/502，且 OpenAI 域名国内不可达。修法：在「设置 · AI」重选服务商后重填地址，或直接 PUT `{capability:'chat', provider:'deepseek', base:'https://api.deepseek.com/v1', model:'deepseek-chat'}` |
+
+> **本轮已修复（原待办 1、4）**
+>
+> 1. 契约测试「AI 配置不返回明文 Key（仅 hasKey）」恒红 —— 根因是断言写法而非接口缺陷：
+>    旧断言 `hasKey === false` 等价于「本机从未配置 Key」，属环境耦合，配过 Key 就永远红。
+>    已改为结构断言（`hasKey` 为布尔 + 递归扫描无 Key 字段/类密钥值），并以正负样本
+>    验证检测器确实会亮。这是「测试错、代码对」的又一例，与 §6 通用原则 A 一致。
+> 2. 契约测试原先会**写坏本机配置** —— `PUT /api/ai/config` 把 base/model 冲成 OpenAI 默认值。
+>    现已改为「先快照、`try/finally` 还原、并断言还原成功」，body 不带 apiKey 故不碰 Key。
+>    实测：先把配置改成哨兵值（deepseek/45000/0.3）→ 跑测试 → 配置逐字段仍是哨兵值。
+>
+> 现 **68/68**（新增 1 项「契约测试不留副作用」）。
 
 ---
 
@@ -141,7 +154,7 @@ npm run server                 # → http://127.0.0.1:8787
 
 ```bash
 npm run typecheck              # tsc，约 20s
-npm run contract               # 契约测试，约 10s，当前 66/67
+npm run contract               # 契约测试，约 10s，当前 68/68
 npm run theme:security         # 路径穿越 17 项，约 5s
 npm run theme:ws               # WS 推送 3 项，约 15s
 npm run plugins:verify         # 插件 35 项，约 10s
@@ -317,9 +330,9 @@ server/packages/themes/<slug>/
 
 如果接手后要继续推进，建议：
 
-1. **先跑一遍验证**（§5 的命令）确认基线是绿的，尤其 `npm run contract` —— 那 1 项失败要确认仍是既有的、没变多。
-2. **修契约测试那项失败** —— 收益明确（恢复信号可信度），风险低。
-3. **按需推进**：想扩功能就从 §4 表里挑；想优化就先读 §6 相关坑，避免重复踩。
+1. **先跑一遍验证**（§5 的命令）确认基线是绿的：`typecheck` / `contract` / `theme:security` / `plugins:verify` 应分别是 0 错 / 68/68 / 17/17 / 35/35。任一项比这个少，先查是不是环境（后端没起、端口被占）。
+2. **按需推进**：想扩功能就从 §4 表里挑；想优化就先读 §6 相关坑，避免重复踩。
+3. **改完照 §5 从短到长复跑**，注意坑 J（`theme:ws` 会连带停后端）。
 
 ---
 
